@@ -8,7 +8,7 @@ Wells are the first collection. The project's geographic focus is nationwide, no
 
 ## Current status
 
-This repository is currently a project home with a README. The working collector and data pipeline are being developed locally; their source code is not published here yet. Reusable source code and the God’s Eye View integration are being prepared for security and license review before publication.
+This repository is currently a project home with a README. The working collector and data pipeline are being developed locally; their source code is not published here yet. Reusable source code and the God's Eye View integration are being prepared for security and license review before publication.
 
 `rainfolk.org` is the intended home for the project. The public starter site has not launched.
 
@@ -16,7 +16,7 @@ This repository is currently a project home with a README. The working collector
 
 The local implementation uses Rust with deterministic transport scripts. Its current pipeline is:
 
-**collect → validate → spatial index → God’s Eye View layer**
+**collect -> validate -> spatial index -> God's Eye View layer**
 
 The pipeline is still being refined. Collection and processing do not require an AI call for every record. AI may be used during development or research.
 
@@ -56,6 +56,6 @@ This README does not grant a blanket license. Code and data licensing will be do
 
 ## Links
 
-- [USGS monitoring-location API documentation](https://api.waterdata.usgs.gov/docs/ogcapi/) — current source documentation.
-- [God’s Eye View](https://github.com/bilawalsidhu/gods-eye-view) — independent upstream project; no official partnership is implied.
-- [Terlingua Water Atlas](https://github.com/Papa-Oso/terlingua-water-atlas) — historical research and catalog snapshot, not Rainfolk’s current codebase or a rebranded version of this project.
+- [USGS monitoring-location API documentation](https://api.waterdata.usgs.gov/docs/ogcapi/) - current source documentation.
+- [God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) - independent upstream project; no official partnership is implied.
+- [Terlingua Water Atlas](https://github.com/Papa-Oso/terlingua-water-atlas) - historical research and catalog snapshot, not Rainfolk's current codebase or a rebranded version of this project.
