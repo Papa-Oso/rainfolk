@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "acquisitions": [
+    {
+      "collection": "monitoring-locations",
+      "url": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=json&limit=2&agency_code=USGS&country_code=US&site_type_code=GW&state_code=36&cursor=B",
+      "retrievedAt": "2026-10-25T00:00:00Z",
+      "response": {
+        "type": "FeatureCollection",
+        "numberReturned": 1,
+        "features": [
+          {
+            "geometry": {
+              "coordinates": [-79.01427777777778, 42.45044444444445],
+              "type": "Point"
+            },
+            "id": "USGS-000000000000005",
+            "properties": {
+              "agency_code": "USGS",
+              "agency_name": "U.S. Geological Survey",
+              "altitude": 1569.92,
+              "altitude_accuracy": 0.4,
+              "altitude_method_code": "Z",
+              "altitude_method_name": "GNSS4 - Level 4 Quality Survey Grade Global Navigation Satellite System",
+              "aquifer_code": "341CONT",
+              "aquifer_type_code": "X",
+              "basin_code": null,
+              "construction_date": "20080815",
+              "contributing_drainage_area": null,
+              "country_code": "US",
+              "country_name": "United States of America",
+              "county_code": "009",
+              "county_name": "Cattaraugus County",
+              "depth_source_code": "G",
+              "district_code": "36",
+              "drainage_area": null,
+              "hole_constructed_depth": 350,
+              "horizontal_position_method_code": "G",
+              "horizontal_position_method_name": "Mapping grade GPS unit (handheld accuracy range 12 to 40 ft)",
+              "horizontal_positional_accuracy": "Accurate to + or - .1 sec (Differentially-Corrected GPS).",
+              "horizontal_positional_accuracy_code": "1",
+              "hydrologic_unit_code": "041201020209",
+              "id": "USGS-000000000000005",
+              "minor_civil_division_code": "57298",
+              "monitoring_location_name": "Synthetic continuation test",
+              "monitoring_location_number": "000000000000005",
+              "national_aquifer_code": "N9999OTHER",
+              "original_horizontal_datum": "NAD83",
+              "original_horizontal_datum_name": "North American Datum of 1983",
+              "revision_created": null,
+              "revision_modified": null,
+              "revision_note": null,
+              "site_type": "Well",
+              "site_type_code": "GW",
+              "state_code": "36",
+              "state_name": "New York",
+              "time_zone_abbreviation": "EST",
+              "uses_daylight_savings": "N",
+              "vertical_datum": "NAVD88",
+              "vertical_datum_name": "North American Vertical Datum of 1988",
+              "well_constructed_depth": 350
+            },
+            "type": "Feature"
+          }
+        ],
+        "links": [
+          {
+            "rel": "self",
+            "href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=json&limit=2&agency_code=USGS&country_code=US&site_type_code=GW&state_code=36&cursor=B"
+          }
+        ]
+      }
+    }
+  ]
+}

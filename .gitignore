@@ -1,0 +1,8 @@
+/crates/us-groundwater/target/
+/.temp-gev/
+__pycache__/
+*.pyc
+.env
+.env.*
+*.clixml
+*.pending

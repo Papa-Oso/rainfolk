@@ -1,0 +1,105 @@
+{
+  "acquisitions": [
+    {
+      "collection": "monitoring-locations",
+      "response": {
+        "features": [
+          {
+            "geometry": {
+              "coordinates": [
+                -79.01427777777778,
+                42.45044444444445
+              ],
+              "type": "Point"
+            },
+            "id": "USGS-422702079005101",
+            "properties": {
+              "agency_code": "USGS",
+              "agency_name": "U.S. Geological Survey",
+              "altitude": 1569.92,
+              "altitude_accuracy": 0.4,
+              "altitude_method_code": "Z",
+              "altitude_method_name": "GNSS4 - Level 4 Quality Survey Grade Global Navigation Satellite System",
+              "aquifer_code": "341CONT",
+              "aquifer_type_code": "X",
+              "basin_code": null,
+              "construction_date": "20080815",
+              "contributing_drainage_area": null,
+              "country_code": "US",
+              "country_name": "United States of America",
+              "county_code": "009",
+              "county_name": "Cattaraugus County",
+              "depth_source_code": "G",
+              "district_code": "36",
+              "drainage_area": null,
+              "hole_constructed_depth": 350,
+              "horizontal_position_method_code": "G",
+              "horizontal_position_method_name": "Mapping grade GPS unit (handheld accuracy range 12 to 40 ft)",
+              "horizontal_positional_accuracy": "Accurate to + or - .1 sec (Differentially-Corrected GPS).",
+              "horizontal_positional_accuracy_code": "1",
+              "hydrologic_unit_code": "041201020209",
+              "id": "USGS-422702079005101",
+              "minor_civil_division_code": "57298",
+              "monitoring_location_name": "Local number, Ct-2498, near Perrysburg NY",
+              "monitoring_location_number": "422702079005101",
+              "national_aquifer_code": "N9999OTHER",
+              "original_horizontal_datum": "NAD83",
+              "original_horizontal_datum_name": "North American Datum of 1983",
+              "revision_created": null,
+              "revision_modified": null,
+              "revision_note": null,
+              "site_type": "Well",
+              "site_type_code": "GW",
+              "state_code": "36",
+              "state_name": "New York",
+              "time_zone_abbreviation": "EST",
+              "uses_daylight_savings": "N",
+              "vertical_datum": "NAVD88",
+              "vertical_datum_name": "North American Vertical Datum of 1988",
+              "well_constructed_depth": 350
+            },
+            "type": "Feature"
+          }
+        ],
+        "links": [
+          {
+            "href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=json&limit=10&id=USGS-451822093413201,USGS-422702079005101,USGS-330548081391102,USGS-380743102240300,USGS-414834102302001,USGS-453816087590101",
+            "rel": "self",
+            "title": "This document as GeoJSON",
+            "type": "application/geo+json"
+          },
+          {
+            "href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=jsonld&limit=10&id=USGS-451822093413201,USGS-422702079005101,USGS-330548081391102,USGS-380743102240300,USGS-414834102302001,USGS-453816087590101",
+            "rel": "alternate",
+            "title": "This document as RDF (JSON-LD)",
+            "type": "application/ld+json"
+          },
+          {
+            "href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=html&limit=10&id=USGS-451822093413201,USGS-422702079005101,USGS-330548081391102,USGS-380743102240300,USGS-414834102302001,USGS-453816087590101",
+            "rel": "alternate",
+            "title": "This document as HTML",
+            "type": "text/html"
+          },
+          {
+            "href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=csv&limit=10&id=USGS-451822093413201,USGS-422702079005101,USGS-330548081391102,USGS-380743102240300,USGS-414834102302001,USGS-453816087590101",
+            "rel": "alternate",
+            "title": "This document as CSV",
+            "type": "text/csv; charset=utf-8"
+          },
+          {
+            "href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations",
+            "rel": "collection",
+            "title": "Monitoring locations",
+            "type": "application/json"
+          }
+        ],
+        "numberReturned": 6,
+        "timeStamp": "2026-10-24T04:20:42.648271Z",
+        "type": "FeatureCollection"
+      },
+      "retrievedAt": "2026-10-24T04:20:42.686Z",
+      "url": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=json&limit=10&id=USGS-451822093413201,USGS-422702079005101,USGS-330548081391102,USGS-380743102240300,USGS-414834102302001,USGS-453816087590101"
+    }
+  ],
+  "schemaVersion": 1
+}

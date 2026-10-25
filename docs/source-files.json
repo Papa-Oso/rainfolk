@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "baseRainfolkCommit": "9ae3e61a658fa77ccc708ee5b9fd18dd12b86fdd",
+  "sourceFiles": [
+    {
+      "path": "crates/us-groundwater/Cargo.toml",
+      "sourceSha256": "c05be43aba2bf23c4e955143ac711d03d2324ccf39a190f728aca3ef049cc9da",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "crates/us-groundwater/Cargo.lock",
+      "sourceSha256": "eb31b101930876c1842bc2434d255abb9c541176a819dd6ac69292da383a324b",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "crates/us-groundwater/src/lib.rs",
+      "sourceSha256": "bd91183e8a94a29cc66468abf7f7a340488e03a9e0dcad198c78d31c8f9aa2d3",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "crates/us-groundwater/src/main.rs",
+      "sourceSha256": "cf66df59344e8aab03a76eabfc7da19821d626044740352682bd1ea4b3ece666",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "crates/us-groundwater/src/job_partitions.rs",
+      "sourceSha256": "4d12540d45ec828406761a2226f730ca8fd27124c12ee043bb5010189fd086b5",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "crates/us-groundwater/src/job_migration.rs",
+      "sourceSha256": "ff02ceccd3920074c89374bbad35c501eb52289ee1dd53d17288149686ab0a39",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "crates/us-groundwater/src/projected_pages.rs",
+      "sourceSha256": "c783527357c08da73ff67078ff6e10e38651c7b906bc6cc9530a14798ea47b12",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "crates/us-groundwater/src/page_segments.rs",
+      "sourceSha256": "66729995f086850387642d2abf16cccf46692e3091e17c8bf708fdb8e5af4cfe",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "crates/us-groundwater/src/bin/well_jobs.rs",
+      "sourceSha256": "7adff7fb52b832d6ab255b771eb721c02020810000f85f6deec0055cb7b2d904",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "crates/us-groundwater/src/bin/well_index.rs",
+      "sourceSha256": "075a1565a0563df56aa6e1a758c031aed26a72e97b44d478d5ae4cc0e369ea48",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "scripts/capture-usgs-inventory.py",
+      "sourceSha256": "a24782838a1dad008b43b83feabcb4f66dc4fbab6fb4af27249402dabf7a2c92",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "scripts/test_capture_usgs_inventory.py",
+      "sourceSha256": "75d539940b93009c67a2bbe368095a758cc9d546b2bdaf0bb600a0600653eab9",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "scripts/usgs-key.ps1",
+      "sourceSha256": "77a82f74dd1c24686a1e553fb6ae038631005dd804f7a194d5c88b4060dbf03f",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "scripts/test-usgs-key-path.ps1",
+      "sourceSha256": "8a58468b05866889d6fa2f594b1281cbe771fadf33ae256b8fd637178a58a97d",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "scripts/verify-usgs-key.py",
+      "sourceSha256": "85187e20bbde476c5a6a46e12e72c21f015eb10b715060e0c4c51af4fed8a1b2",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "builder-developed tooling"
+    },
+    {
+      "path": "fixtures/us-groundwater/v1/capture.json",
+      "sourceSha256": "cee67b875c4ee52f55791dea862afff1e5420695d9e10fccbc48f63f6696bfad",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/v1/expected-pack.json",
+      "sourceSha256": "0adbaf9fd3bda528784d3cb29955a580e6df15cd2e1993c1e506233e846b47df",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/v1/sha256.json",
+      "sourceSha256": "e5fc45da36a3921b931ca3119a3800770276023e07e3e8521fbdd71d947f7dc4",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/usgs-inventory-pilot/capture.json",
+      "sourceSha256": "4d2dc365805bf514bba982f74fb0bb3228a25a161be0ae9268dfaeda0af2b1c9",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/jobs-v1/la-capture.json",
+      "sourceSha256": "2799d3bb9c350f358a54b3edb0a628f36e374ac8d630a7a7c5a033668d16bcca",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/jobs-v1/synthetic-invalid-wi.json",
+      "sourceSha256": "ac023ec271a4ff919f0ba00021157642fb1549e7f6ce3f5460d0a6ad2d1097fa",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/jobs-v1/queue-offline.json",
+      "sourceSha256": "6e143b3b447cfb4a33f507c5522a5029f3f5a0dd248b0e810ce8b77f55c2dd2c",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/jobs-v2/queue-offline.json",
+      "sourceSha256": "5c2845aff090916620ba826bbbdc9f9e908f72224af987c1fc8f7a9310af50d5",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/jobs-v2/synthetic-0.json",
+      "sourceSha256": "1071bc755524036dbd50b96b08965781adc61d9dd6c39eadb7c82d1c6373188a",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/jobs-v2/synthetic-1.json",
+      "sourceSha256": "e078a7b3902009ced08ea47c3ed3e6cd2f10b021654d2cd356f8b06a9c8fe02c",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/jobs-v2/synthetic-2.json",
+      "sourceSha256": "657dcc961d501d49d3de1eb0d5a3f7b2b3f465233cfee6ed1ba51b776dbcda31",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "USGS public-source or synthetic fixture"
+    },
+    {
+      "path": "fixtures/us-groundwater/usgs-inventory-pilot/candidate-bundle.json",
+      "sourceSha256": "bd81067bdffb9c132d562ee535807bf68e82711d5e287547f2b0f68bf5273c2f",
+      "sourceCommit": "a2c3a9766e251eb0311368cc77a1215d34221ec3 plus uncommitted builder changes",
+      "origin": "required small USGS candidate fixture; offline transport last-good regression"
+    }
+  ],
+  "reviewCorrections": [
+    {
+      "path": "crates/us-groundwater/Cargo.toml",
+      "change": "Approved original-material MIT ownership; authors metadata."
+    },
+    {
+      "path": "crates/us-groundwater/src/bin/well_index.rs",
+      "change": "Truthful observation coverage; immutable tile/audit/rollback publication; exclusive output writer lock; focused tests."
+    },
+    {
+      "path": "scripts/usgs-key.ps1",
+      "change": "Exclude nonportable historical Benchmark action."
+    }
+  ]
+}

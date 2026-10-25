@@ -1,0 +1,190 @@
+{
+  "inventory": {
+    "kind": "gev-us-groundwater-inventory",
+    "records": [
+      {
+        "id": "USGS-422702079005101",
+        "latitude": 42.45044444444445,
+        "longitude": -79.01427777777778,
+        "metadata": {
+          "agency_code": "USGS",
+          "agency_name": "U.S. Geological Survey",
+          "altitude": 1569.92,
+          "altitude_accuracy": 0.4,
+          "altitude_method_code": "Z",
+          "altitude_method_name": "GNSS4 - Level 4 Quality Survey Grade Global Navigation Satellite System",
+          "aquifer_code": "341CONT",
+          "aquifer_type_code": "X",
+          "basin_code": null,
+          "construction_date": "20080815",
+          "contributing_drainage_area": null,
+          "country_code": "US",
+          "country_name": "United States of America",
+          "county_code": "009",
+          "county_name": "Cattaraugus County",
+          "depth_source_code": "G",
+          "district_code": "36",
+          "drainage_area": null,
+          "hole_constructed_depth": 350,
+          "horizontal_position_method_code": "G",
+          "horizontal_position_method_name": "Mapping grade GPS unit (handheld accuracy range 12 to 40 ft)",
+          "horizontal_positional_accuracy": "Accurate to + or - .1 sec (Differentially-Corrected GPS).",
+          "horizontal_positional_accuracy_code": "1",
+          "hydrologic_unit_code": "041201020209",
+          "id": "USGS-422702079005101",
+          "minor_civil_division_code": "57298",
+          "monitoring_location_name": "Local number, Ct-2498, near Perrysburg NY",
+          "monitoring_location_number": "422702079005101",
+          "national_aquifer_code": "N9999OTHER",
+          "original_horizontal_datum": "NAD83",
+          "original_horizontal_datum_name": "North American Datum of 1983",
+          "revision_created": null,
+          "revision_modified": null,
+          "revision_note": null,
+          "site_type": "Well",
+          "site_type_code": "GW",
+          "state_code": "36",
+          "state_name": "New York",
+          "time_zone_abbreviation": "EST",
+          "uses_daylight_savings": "N",
+          "vertical_datum": "NAVD88",
+          "vertical_datum_name": "North American Vertical Datum of 1988",
+          "well_constructed_depth": 350
+        },
+        "metadataRetrievedAt": "2026-10-24T04:20:42.686Z",
+        "metadataSourceUrl": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=json&limit=10&id=USGS-451822093413201,USGS-422702079005101,USGS-330548081391102,USGS-380743102240300,USGS-414834102302001,USGS-453816087590101",
+        "name": "Local number, Ct-2498, near Perrysburg NY",
+        "sourceUrl": "https://waterdata.usgs.gov/monitoring-location/USGS-422702079005101/"
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "kind": "gev-us-groundwater-artifact-bundle",
+  "layerPack": {
+    "acquisitions": [
+      {
+        "collection": "monitoring-locations",
+        "nextPageAvailable": false,
+        "retrievedAt": "2026-10-24T04:20:42.686Z",
+        "returned": 1,
+        "url": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=json&limit=10&id=USGS-451822093413201,USGS-422702079005101,USGS-330548081391102,USGS-380743102240300,USGS-414834102302001,USGS-453816087590101"
+      }
+    ],
+    "coverage": {
+      "accounting": {
+        "acceptedWells": 1,
+        "identicalDuplicateRows": 0,
+        "inputRows": 1,
+        "quarantined": 0,
+        "rejected": 0
+      },
+      "complete": false,
+      "country": "US",
+      "description": "Bounded USGS groundwater monitoring-location inventory for state code 36; partial sample, observations not requested.",
+      "excludedSourceRows": 0,
+      "observationStatus": "not-requested",
+      "stateCode": "36"
+    },
+    "kind": "gev-us-groundwater-wells",
+    "mode": "snapshot",
+    "records": [
+      {
+        "id": "USGS-422702079005101",
+        "latitude": 42.45044444444445,
+        "longitude": -79.01427777777778,
+        "metadata": {
+          "agency_code": "USGS",
+          "agency_name": "U.S. Geological Survey",
+          "altitude": 1569.92,
+          "altitude_accuracy": 0.4,
+          "altitude_method_code": "Z",
+          "altitude_method_name": "GNSS4 - Level 4 Quality Survey Grade Global Navigation Satellite System",
+          "aquifer_code": "341CONT",
+          "aquifer_type_code": "X",
+          "basin_code": null,
+          "construction_date": "20080815",
+          "contributing_drainage_area": null,
+          "country_code": "US",
+          "country_name": "United States of America",
+          "county_code": "009",
+          "county_name": "Cattaraugus County",
+          "depth_source_code": "G",
+          "district_code": "36",
+          "drainage_area": null,
+          "hole_constructed_depth": 350,
+          "horizontal_position_method_code": "G",
+          "horizontal_position_method_name": "Mapping grade GPS unit (handheld accuracy range 12 to 40 ft)",
+          "horizontal_positional_accuracy": "Accurate to + or - .1 sec (Differentially-Corrected GPS).",
+          "horizontal_positional_accuracy_code": "1",
+          "hydrologic_unit_code": "041201020209",
+          "id": "USGS-422702079005101",
+          "minor_civil_division_code": "57298",
+          "monitoring_location_name": "Local number, Ct-2498, near Perrysburg NY",
+          "monitoring_location_number": "422702079005101",
+          "national_aquifer_code": "N9999OTHER",
+          "original_horizontal_datum": "NAD83",
+          "original_horizontal_datum_name": "North American Datum of 1983",
+          "revision_created": null,
+          "revision_modified": null,
+          "revision_note": null,
+          "site_type": "Well",
+          "site_type_code": "GW",
+          "state_code": "36",
+          "state_name": "New York",
+          "time_zone_abbreviation": "EST",
+          "uses_daylight_savings": "N",
+          "vertical_datum": "NAVD88",
+          "vertical_datum_name": "North American Vertical Datum of 1988",
+          "well_constructed_depth": 350
+        },
+        "metadataRetrievedAt": "2026-10-24T04:20:42.686Z",
+        "metadataSourceUrl": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=json&limit=10&id=USGS-451822093413201,USGS-422702079005101,USGS-330548081391102,USGS-380743102240300,USGS-414834102302001,USGS-453816087590101",
+        "name": "Local number, Ct-2498, near Perrysburg NY",
+        "readings": [],
+        "sourceUrl": "https://waterdata.usgs.gov/monitoring-location/USGS-422702079005101/"
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "manifest": {
+    "activation": "validated-candidate-only",
+    "artifactEncoding": "serde-json-compact-sorted-keys-v1",
+    "artifacts": {
+      "inventory": {
+        "bytes": 2129,
+        "recordCount": 1,
+        "schemaVersion": 1,
+        "sha256": "d4bf3babb4053c4f89c2c23aabfbfa48a0f0b4bea81f5c72e9c2e0eaf10181d6"
+      },
+      "layerPack": {
+        "bytes": 2883,
+        "recordCount": 1,
+        "schemaVersion": 1,
+        "sha256": "bd637aa201b83a2fb5c22197b665dbc182431b998f608a26c1126a68737cd299"
+      },
+      "observations": {
+        "bytes": 73,
+        "recordCount": 0,
+        "schemaVersion": 1,
+        "sha256": "fbd4145cffcfb99b6c19a7a6fdfa816e098c4c72e7e38843c73d485b021d1c84"
+      }
+    },
+    "input": {
+      "bytes": 4958,
+      "sha256": "4d2dc365805bf514bba982f74fb0bb3228a25a161be0ae9268dfaeda0af2b1c9"
+    },
+    "kind": "gev-us-groundwater-bundle-manifest",
+    "producer": {
+      "name": "gev-us-groundwater",
+      "version": "0.1.0"
+    },
+    "schemaVersion": 1
+  },
+  "manifestSha256": "c0bbef5d95cc59358ea07bf3cc73a55ae591f2e1998fc210dd9e753078780c8c",
+  "observations": {
+    "kind": "gev-us-groundwater-observations",
+    "records": [],
+    "schemaVersion": 1
+  },
+  "schemaVersion": 1
+}

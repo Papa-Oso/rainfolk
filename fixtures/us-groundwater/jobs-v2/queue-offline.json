@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 2,
+  "adapter": "usgs-monitoring-locations",
+  "mode": "fixture",
+  "budgets": {
+    "pages": 1,
+    "rowsPerPage": 2,
+    "bytesPerState": 1048576,
+    "stateSeconds": 60,
+    "runSeconds": 300,
+    "rateMillis": 1000,
+    "runPages": 1,
+    "runBytes": 10485760,
+    "jobPages": 20,
+    "jobBytes": 10485760
+  },
+  "states": [
+    {
+      "state": "36",
+      "fixturePartitions": [
+        "fixtures/us-groundwater/jobs-v2/synthetic-0.json",
+        "fixtures/us-groundwater/jobs-v2/synthetic-1.json",
+        "fixtures/us-groundwater/jobs-v2/synthetic-2.json"
+      ]
+    }
+  ]
+}

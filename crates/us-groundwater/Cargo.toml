@@ -1,0 +1,20 @@
+[package]
+name = "gev-us-groundwater"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Joshua Koelker"]
+publish = false
+default-run = "gev-us-groundwater"
+description = "Bounded offline USGS groundwater-well validation and artifact export"
+
+[[bin]]
+name = "well-jobs"
+path = "src/bin/well_jobs.rs"
+
+[dependencies]
+sha2 = "=0.10.9"
+serde_json = "=1.0.145"
+
+[lints.rust]
+unsafe_code = "forbid"

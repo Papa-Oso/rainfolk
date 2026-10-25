@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "adapter": "usgs-monitoring-locations",
+  "mode": "fixture",
+  "budgets": {
+    "pages": 2,
+    "rowsPerPage": 25,
+    "bytesPerState": 1048576,
+    "stateSeconds": 60,
+    "runSeconds": 180,
+    "rateMillis": 1000
+  },
+  "states": [
+    {
+      "state": "22",
+      "fixture": "fixtures/us-groundwater/jobs-v1/la-capture.json"
+    },
+    {
+      "state": "55",
+      "fixture": "fixtures/us-groundwater/jobs-v1/synthetic-invalid-wi.json"
+    },
+    {
+      "state": "36",
+      "fixture": "fixtures/us-groundwater/usgs-inventory-pilot/capture.json"
+    }
+  ]
+}
