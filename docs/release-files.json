@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "baseCommit": "a815b559f5b0f7cc8d8616055d4069dc794e5a77",
+  "baseCommit": "7e8f79fe5b26cd1c3ecc5de4a8f6519a98203383",
   "files": [
     {
       "path": ".gitattributes",
@@ -19,8 +19,8 @@
     },
     {
       "path": "DATA_SOURCES.md",
-      "bytes": 1456,
-      "sha256": "10236d0bfe403798e0da60569111460bf6315f6bc70ff044b2df73fff1591e48"
+      "bytes": 2642,
+      "sha256": "035e2990701fbbf60eef608a4c76906ef0af34a477f6386fd8a250fe28006607"
     },
     {
       "path": "LICENSE",
@@ -249,8 +249,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 8489,
-      "sha256": "024cf52eeedf9985fe85781f5fba9ddfe26c77e86ca89eafcc01c06c9961a09c"
+      "bytes": 9742,
+      "sha256": "e295ec31109bf1279dea6748fea52abb771083603e347d41d82c5b7c1e90d2d7"
     },
     {
       "path": "SECURITY.md",
@@ -259,13 +259,13 @@
     },
     {
       "path": "crates/us-groundwater/Cargo.lock",
-      "bytes": 4866,
-      "sha256": "eb31b101930876c1842bc2434d255abb9c541176a819dd6ac69292da383a324b"
+      "bytes": 4876,
+      "sha256": "1f4519affb1ef8c08e29daec91d6a9429026c5cdfbfd28bdae0f8ee98b6dd8c2"
     },
     {
       "path": "crates/us-groundwater/Cargo.toml",
-      "bytes": 406,
-      "sha256": "4a2efc28aa8dededdbb1662d6782d9b8001f86fab1e4e49ce4e45da71ca4e6ad"
+      "bytes": 425,
+      "sha256": "e8672e6fb12bf27c16c5406925b86e82a112312f2083b07a2cef33dfaeefb32d"
     },
     {
       "path": "crates/us-groundwater/src/bin/well_index.rs",
@@ -289,13 +289,13 @@
     },
     {
       "path": "crates/us-groundwater/src/lib.rs",
-      "bytes": 33977,
-      "sha256": "bd91183e8a94a29cc66468abf7f7a340488e03a9e0dcad198c78d31c8f9aa2d3"
+      "bytes": 33997,
+      "sha256": "cae17d7cd686e89057630ebe6b04cda9eaa58dbb11e8138b1c468428f1652159"
     },
     {
       "path": "crates/us-groundwater/src/main.rs",
-      "bytes": 2134,
-      "sha256": "cf66df59344e8aab03a76eabfc7da19821d626044740352682bd1ea4b3ece666"
+      "bytes": 2422,
+      "sha256": "66bb38ccb0d6e0eeebe28773831e4bc74a8bef242c96954699a4a782c36f36f0"
     },
     {
       "path": "crates/us-groundwater/src/page_segments.rs",
@@ -306,6 +306,16 @@
       "path": "crates/us-groundwater/src/projected_pages.rs",
       "bytes": 16361,
       "sha256": "c783527357c08da73ff67078ff6e10e38651c7b906bc6cc9530a14798ea47b12"
+    },
+    {
+      "path": "crates/us-groundwater/src/texas_sdr.rs",
+      "bytes": 18842,
+      "sha256": "15ca4348e5179e046f45512ece51d6146bbe513bb66d5f240240587f8bde737e"
+    },
+    {
+      "path": "crates/us-groundwater/tests/texas_sdr.rs",
+      "bytes": 22895,
+      "sha256": "e2f0df23eda07cc4b9f81691f42aeab3e6f6a5c0f8fb34d0939f833467d836b6"
     },
     {
       "path": "docs/ARTIFACT_CONTRACT.md",
@@ -319,13 +329,18 @@
     },
     {
       "path": "docs/MIGRATION.md",
-      "bytes": 6956,
-      "sha256": "6befedbc49f3fc31e55e54c9f5e39279c2777f90fc2d42bd3147777fc52954f7"
+      "bytes": 8565,
+      "sha256": "36105305bd607a06206522bf04681fe58d5d6017db2eaa42b3fbcc5a8904adc2"
     },
     {
       "path": "docs/RIGHTS.md",
-      "bytes": 2003,
-      "sha256": "a72d62dcc07ce42e3be691fb3fc4df2076785801768f0f53fff80e184b60e09d"
+      "bytes": 2158,
+      "sha256": "00f229a72d13e610a802754c41e33c24d0c5e7e286db57c92aee44656d46da8f"
+    },
+    {
+      "path": "docs/TEXAS_SDR.md",
+      "bytes": 21100,
+      "sha256": "66ed3c47f24c1d0aee67abac124a7515f6d3a0518efae552dc4d28c062c71628"
     },
     {
       "path": "docs/dependencies.json",
@@ -341,6 +356,26 @@
       "path": "examples/offline.py",
       "bytes": 2007,
       "sha256": "5aa4cec313af14998c184b0d94934a00179b0d287b40de652d271057f7001cc7"
+    },
+    {
+      "path": "examples/texas_sdr_offline.py",
+      "bytes": 2282,
+      "sha256": "6e1283bc43572c66037de0df95f09b18ba096e100abe9bec1660b1045a4e47f8"
+    },
+    {
+      "path": "fixtures/texas-sdr/README.md",
+      "bytes": 753,
+      "sha256": "9a79c8f104ad13d4254e71f44d0f88522d7d2020864846238f1419d5de47a763"
+    },
+    {
+      "path": "fixtures/texas-sdr/SHA256SUMS",
+      "bytes": 84,
+      "sha256": "b7fb28865e35ed25eb94db7ae284b0000942cd31fcacee3c741e52b68ee97485"
+    },
+    {
+      "path": "fixtures/texas-sdr/synthetic-v1.json",
+      "bytes": 1242,
+      "sha256": "4c3ff3d18f1b8be36ee2de847c57169db0b8fdf40bb389822013a161e7103e35"
     },
     {
       "path": "fixtures/us-groundwater/jobs-v1/README.md",
@@ -438,19 +473,29 @@
       "sha256": "fd6733503bfcddfdd6fb294e8ec7da9c4dc5661873bd7f3db4d3a0eb65328b79"
     },
     {
+      "path": "scripts/capture-texas-sdr.py",
+      "bytes": 24223,
+      "sha256": "fc355ea25a8abb81d64fb5d727587fb4291f8223a3c55c358e683b424bff45eb"
+    },
+    {
       "path": "scripts/capture-usgs-inventory.py",
       "bytes": 13385,
       "sha256": "a24782838a1dad008b43b83feabcb4f66dc4fbab6fb4af27249402dabf7a2c92"
     },
     {
       "path": "scripts/check-release.py",
-      "bytes": 3700,
-      "sha256": "ea68eeb9aa58ed7d3b81d70e3fa383bfb013639929fc620e9bf39604c76ad387"
+      "bytes": 4588,
+      "sha256": "8a46ebb04396231a387d090a86b7df60d2665d1c9829be3eed11e0706df731c6"
     },
     {
       "path": "scripts/test-usgs-key-path.ps1",
       "bytes": 970,
       "sha256": "8a58468b05866889d6fa2f594b1281cbe771fadf33ae256b8fd637178a58a97d"
+    },
+    {
+      "path": "scripts/test_capture_texas_sdr.py",
+      "bytes": 15603,
+      "sha256": "85922c15f7d3b4e52a4aa140271396637631719b9d14da0ff9d86bb2fb18ee76"
     },
     {
       "path": "scripts/test_capture_usgs_inventory.py",

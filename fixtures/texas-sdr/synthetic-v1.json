@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "kind": "rainfolk-texas-sdr-capture",
+  "synthetic": true,
+  "sourceUrl": "https://services.twdb.texas.gov/arcgis/rest/services/Public/WellReports/FeatureServer/0",
+  "retrievedAt": "2026-10-26T00:00:00Z",
+  "response": {
+    "spatialReference": {"wkid": 4326},
+    "exceededTransferLimit": true,
+    "features": [
+      {"attributes": {
+        "WellReportTrackingNumber": "000000000000001",
+        "ProposedUse": " Domestic ",
+        "LatitudeDD": 30.25,
+        "LongitudeDD": -97.75,
+        "DateOfWellCompletion": 1709164800000,
+        "BoreholeDepthFt": 125.5,
+        "LocationError": 0
+      }},
+      {"attributes": {
+        "WellReportTrackingNumber": "000000000000002",
+        "ProposedUse": null,
+        "LatitudeDD": 30.25,
+        "LongitudeDD": -97.75,
+        "DateOfWellCompletion": null,
+        "BoreholeDepthFt": null,
+        "LocationError": null
+      }},
+      {"attributes": {
+        "WellReportTrackingNumber": "000000000000003",
+        "LatitudeDD": null,
+        "LongitudeDD": null
+      }},
+      {"attributes": {
+        "WellReportTrackingNumber": "000000000000004",
+        "LatitudeDD": 30.25,
+        "LongitudeDD": -97.75,
+        "LocationError": 1
+      }}
+    ]
+  }
+}

@@ -17,6 +17,15 @@ def main():
     ).decode('utf-8').split('\0')) - {''}
     listed = {row['path'] for row in manifest['files']}
     assert actual == listed | {'docs/release-files.json'}, 'Release file set differs'
+    # The SDR source release includes only this reviewed, invented fixture.
+    # Real public captures and diagnostics remain ignored local evidence.
+    sdr_fixture = 'fixtures/texas-sdr/synthetic-v1.json'
+    assert {name for name in listed if name.startswith('fixtures/texas-sdr/')} == {
+        'fixtures/texas-sdr/README.md', 'fixtures/texas-sdr/SHA256SUMS', sdr_fixture,
+    }, 'Unexpected SDR fixture file'
+    fixture = json.loads((ROOT / sdr_fixture).read_text(encoding='utf-8'))
+    assert fixture.get('synthetic') is True and fixture.get('kind') == \
+        'rainfolk-texas-sdr-capture', 'SDR release fixture must be synthetic'
     issues = []
     urls = 0
     for row in manifest['files']:
@@ -61,6 +70,9 @@ def main():
         for name, digest in json.loads(checksum_file.read_text(encoding='utf-8')).items():
             assert Path(name).name == name
             assert hashlib.sha256((checksum_file.parent / name).read_bytes()).hexdigest() == digest
+    sdr_checksums = (ROOT / 'fixtures/texas-sdr/SHA256SUMS').read_text(encoding='utf-8')
+    assert sdr_checksums == hashlib.sha256((ROOT / sdr_fixture).read_bytes()).hexdigest() + \
+        '  synthetic-v1.json\n', 'SDR fixture checksum mismatch'
     assert not issues, json.dumps(issues)  # Locations/rules only, never matched values.
     print(json.dumps({'files': len(manifest['files']) + 1, 'bytesExcludingManifest':
         sum(row['bytes'] for row in manifest['files']), 'fixtureUrlsInspected': urls,

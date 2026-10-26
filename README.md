@@ -81,14 +81,19 @@ Run from the checkout root:
 cargo build --offline --locked --manifest-path crates/us-groundwater/Cargo.toml --bins
 cargo test --offline --locked --manifest-path crates/us-groundwater/Cargo.toml
 cargo fmt --manifest-path crates/us-groundwater/Cargo.toml -- --check
-python -B -m unittest discover -s scripts -p 'test_capture_usgs_inventory.py'
+python -B -m unittest discover -s scripts -p 'test_capture*.py'
 python -B examples/offline.py
-python -B scripts/check-release.py
+python -B examples/texas_sdr_offline.py
+python -B scripts/check-workflow.py
 ```
 
 The example produces six indexed USGS IDs, verifies identical rebuilds and
 rejects a tampered candidate without replacing the last-good index. Output is
 kept under ignored `.temp-gev/`. It does not access the network or a credential.
+The synthetic SDR example retains four invented reports, including one nonspatial
+record, and verifies deterministic hashes and replay. The aggregate workflow
+checker verifies the producer release inventory and separate workflow files.
+Real SDR records and diagnostics are excluded from the source release.
 
 ## Run and resume a fixture queue
 
@@ -144,3 +149,17 @@ The legacy Terlingua project is intended for retirement once migration gates
 pass; it is not an operational dependency here. Do not delete it on the basis of
 this candidate alone. The public site and its deployment are handled separately;
 `rainfolk.org` remains unpublished in this source release's status.
+
+## Texas SDR offline adapter candidate
+
+The same Rust crate includes `--texas-sdr-v1` for at most 200 submitted driller
+construction-report rows, with explicit synthetic or public capture types. After building, run
+`python -B examples/texas_sdr_offline.py` for normalization, quarantine, hash and
+replay evidence. The separate bounded Python transport defaults to a zero-request
+dry run. Field bisection isolated `DateOfWellCompletion`: selecting it returns
+ArcGIS 400 in the bounded query; the other six fields work together. One real
+public construction report now passes through Rust with date explicitly unknown,
+retained source quality flags, verified hashes and identical replay. The local
+candidate has no spatial-index activation or publication.
+See the [source contract, public-field proposal and pilot evidence](docs/TEXAS_SDR.md); construction
+reports do not verify active wells, ownership or water safety.

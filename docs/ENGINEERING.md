@@ -22,16 +22,21 @@ python -B scripts/check-workflow.py
 cargo build --offline --locked --manifest-path crates/us-groundwater/Cargo.toml --bins
 cargo test --offline --locked --manifest-path crates/us-groundwater/Cargo.toml
 cargo fmt --manifest-path crates/us-groundwater/Cargo.toml -- --check
-python -B -m unittest discover -s scripts -p test_capture_usgs_inventory.py
+python -B -m unittest discover -s scripts -p 'test_capture*.py'
 python -B examples/offline.py
+python -B examples/texas_sdr_offline.py
 ```
 
-The fixture example proves six IDs, identical replay, tamper rejection and
-last-good retention. Output belongs under ignored temporary/build directories.
-The producer checker is unchanged: the workflow wrapper verifies current producer
-bytes in a temporary Git tree and scans the explicit workflow files separately.
+The USGS fixture example proves six IDs, identical replay, tamper rejection and
+last-good retention. The synthetic SDR example proves four retained records,
+three map-eligible with unverified accuracy, one nonspatial, and repeatable hashes.
+Output belongs under ignored temporary/build directories. The release inventory
+includes the reviewed SDR source additions and invented fixture only; real public
+records and diagnostics remain outside the release. The wrapper verifies current
+producer bytes in a temporary Git tree and scans explicit workflow files separately.
 Direct `scripts/check-release.py` at the mixed repository root will reject workflow
-additions; use the wrapper here. It does not certify a future combined release.
+additions; use the wrapper here. A passing check supports source publication review;
+it does not authorize publication or certify live datasets.
 
 ## Work and evidence
 

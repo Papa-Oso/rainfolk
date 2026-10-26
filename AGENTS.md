@@ -29,5 +29,7 @@ Rights and safety: [component rights](docs/RIGHTS.md), [data sources](DATA_SOURC
 ## Manifest boundary
 The producer release manifest is maintained by the producer owner.
 For this workflow layer run `python -B scripts/check-workflow.py`.
-It verifies the unchanged producer manifest plus an explicit workflow file set.
-Do not regenerate producer provenance or manifest as a side effect of documentation work.
+It verifies the producer manifest plus an explicit workflow file set.
+Update the producer release inventory only for an explicitly scoped producer
+release reconciliation. Preserve historical imported provenance in
+`docs/source-files.json`; do not regenerate it as a side effect of documentation work.
