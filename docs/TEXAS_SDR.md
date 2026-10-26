@@ -153,7 +153,7 @@ report data, alternate hosts or credentials were used. Selecting the date field
 is the concrete trigger for this bounded query; the backend does not disclose
 its deeper reason. This does not establish that every source date is bad.
 
-Final candidate: TWDB-SDR-346, one accepted public construction report, one
+Final candidate: one accepted public construction report, one
 map-eligible unverified location, zero nonmapped/quarantined records. Completion
 date stays null/unknown. Its provenance explicitly records the omitted field,
 source-query-api-400 reason and diagnostic evidence SHA-256. Original LocationError
@@ -292,7 +292,14 @@ New checks cover stable value-free guard logging and strict one-row partial
 projections/limitation provenance. The real pilot is also verified separately;
 it is not used as a committed synthetic test fixture.
 
-The workflow checker pins the previous release inventory and rejects this
-development candidate. Manifest/checker remain unchanged; release-inventory
-reconciliation and fresh review of the new source commit remain gates. No push,
-PR, publication, deployment, bulk collection or agency contact was performed.
+The producer release inventory is reconciled from reviewed source commit
+`7e8f79fe5b26cd1c3ecc5de4a8f6519a98203383`. It includes the SDR source, tests,
+offline example, contract and three explicitly permitted synthetic-fixture files.
+The release checker verifies the SDR checksum and synthetic capture marker and
+rejects extra SDR fixture files. Real public records, captures and diagnostics
+remain ignored local evidence, outside both the manifest and synthetic fixtures.
+Historical imported provenance in `source-files.json` remains unchanged. CI and
+the engineering commands run both transport suites and both offline examples.
+Final source publication review/authorization remains separate; this reconciliation
+does not authorize publishing the real sample. No push, PR, publication, deployment,
+bulk collection or agency contact was performed.

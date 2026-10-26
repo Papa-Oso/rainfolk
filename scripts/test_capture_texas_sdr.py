@@ -215,7 +215,7 @@ class CaptureTests(unittest.TestCase):
 
     def test_bounded_safe_api_diagnostics_are_persisted_without_record_values(self):
         error = dict(error=dict(code=400, message='Unable to complete operation.', details=[
-            'Invalid field: LatitudeDD', 'PRIVATE-SENTINEL', 'owner@example.com', 'omitted-extra-detail']),
+            'Invalid field: LatitudeDD', 'PRIVATE-SENTINEL', 'PRIVATE-ADDRESS-SENTINEL', 'omitted-extra-detail']),
             features=[dict(attributes=dict(WellOwner='PRIVATE-SENTINEL'))])
         opener = Opener([schema(), error])
         with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
@@ -231,7 +231,7 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(failure['error']['details'], ['Invalid field: LatitudeDD',
                 'Unrecognized source message omitted.', 'Unrecognized source message omitted.'])
             self.assertNotIn('PRIVATE-SENTINEL', raw)
-            self.assertNotIn('owner@example.com', raw)
+            self.assertNotIn('PRIVATE-ADDRESS-SENTINEL', raw)
             self.assertNotIn('features', failure)
             self.assertFalse((target / 'public-response.json').exists())
             self.assertTrue((target / 'schema.json').exists())

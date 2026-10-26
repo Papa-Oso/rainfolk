@@ -110,3 +110,28 @@ legacy history/evidence snapshot without making it an operational dependency;
 reconcile website/deployment dependencies through that task's owner; run the
 strong release review; and confirm the approved source commit on the intended
 public remote. No public push is authorized by this candidate preparation.
+
+## Texas SDR source release reconciliation (October 26, 2026)
+
+The earlier sections record the original import and its validation. The current
+isolated SDR branch starts from public main `98ef0f9e72e4d411ac33f7328f31fcb5f3b2831d`.
+The SDR adapter review covered `7e8f79fe5b26cd1c3ecc5de4a8f6519a98203383`;
+release inventory reconciliation uses that reviewed commit as its base. Imported
+`source-files.json` provenance and all existing USGS fixtures remain unchanged.
+The current repository includes the separate workflow layer; use
+`python -B scripts/check-workflow.py` for the producer hashes, fixture checks and
+explicit workflow inventory, with all commands in [ENGINEERING.md](ENGINEERING.md).
+CI now runs both transport suites and both offline examples.
+
+The producer inventory adds nine SDR source/test/example/contract/fixture files.
+Only the invented SDR fixture is included; real public sample records and all
+diagnostic captures remain under ignored local paths. The checker enforces the
+three-file SDR fixture allowlist, synthetic marker and exact checksum. An error
+logging test uses non-email private-value sentinels, retaining the release email
+heuristic and its logging assertions. No new dependency versions or runtime
+adapter behavior were added by this reconciliation.
+
+The source-only patch is prepared for final publication review. Publication,
+real-data distribution, the separate consumer, website deployment and legacy
+retirement retain their own gates; no upstream write or email is performed here.
+See [Texas SDR contract and bounded pilot evidence](TEXAS_SDR.md) for source limits.

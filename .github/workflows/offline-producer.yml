@@ -38,6 +38,8 @@ jobs:
       - name: Formatting
         run: cargo +1.99.1 fmt --manifest-path crates/us-groundwater/Cargo.toml -- --check
       - name: Offline transport tests
-        run: python -B -m unittest discover -s scripts -p test_capture_usgs_inventory.py
+        run: python -B -m unittest discover -s scripts -p 'test_capture*.py'
       - name: Replay and tamper fixture
         run: python -B examples/offline.py
+      - name: Replay synthetic SDR fixture
+        run: python -B examples/texas_sdr_offline.py

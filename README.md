@@ -81,14 +81,19 @@ Run from the checkout root:
 cargo build --offline --locked --manifest-path crates/us-groundwater/Cargo.toml --bins
 cargo test --offline --locked --manifest-path crates/us-groundwater/Cargo.toml
 cargo fmt --manifest-path crates/us-groundwater/Cargo.toml -- --check
-python -B -m unittest discover -s scripts -p 'test_capture_usgs_inventory.py'
+python -B -m unittest discover -s scripts -p 'test_capture*.py'
 python -B examples/offline.py
-python -B scripts/check-release.py
+python -B examples/texas_sdr_offline.py
+python -B scripts/check-workflow.py
 ```
 
 The example produces six indexed USGS IDs, verifies identical rebuilds and
 rejects a tampered candidate without replacing the last-good index. Output is
 kept under ignored `.temp-gev/`. It does not access the network or a credential.
+The synthetic SDR example retains four invented reports, including one nonspatial
+record, and verifies deterministic hashes and replay. The aggregate workflow
+checker verifies the producer release inventory and separate workflow files.
+Real SDR records and diagnostics are excluded from the source release.
 
 ## Run and resume a fixture queue
 
