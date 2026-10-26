@@ -4,6 +4,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub mod texas_sdr;
+
 pub const MAX_BYTES: u64 = 8 * 1024 * 1024;
 pub const MAX_SITES: usize = 2000;
 pub const MAX_READINGS: usize = 16;

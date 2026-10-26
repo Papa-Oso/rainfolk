@@ -144,3 +144,12 @@ The legacy Terlingua project is intended for retirement once migration gates
 pass; it is not an operational dependency here. Do not delete it on the basis of
 this candidate alone. The public site and its deployment are handled separately;
 `rainfolk.org` remains unpublished in this source release's status.
+
+## Texas SDR offline adapter candidate
+
+The same Rust crate includes `--texas-sdr-v1` for at most 200 synthetic submitted
+driller construction-report rows. After building, run
+`python -B examples/texas_sdr_offline.py` for normalization, quarantine, hash and
+replay evidence. This candidate has no live ingestion or spatial-index activation.
+See the [source contract and pending rights gate](docs/TEXAS_SDR.md); construction
+reports do not verify active wells, ownership or water safety.

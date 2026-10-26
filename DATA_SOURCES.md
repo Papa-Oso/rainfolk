@@ -21,3 +21,13 @@ The collected national corpus and historical Texas, USGWD and Louisiana HQA data
 are not included. Missing/unknown coordinate quality remains unknown; provisional
 measurements can change. No water availability, drilling or potability inference
 is supported.
+
+## Texas SDR offline candidate
+
+`fixtures/texas-sdr/synthetic-v1.json` contains invented construction-report rows
+only, with no downloaded SDR records. The bounded Rust adapter is synthetic-only;
+it excludes owner/contact/address fields and does not activate the USGS index.
+See [the SDR source contract](docs/TEXAS_SDR.md) for official metadata/policy
+links, normalization rules and the unresolved confidential-report exclusion
+blocker under Texas Occupations Code 1901.251(c). TWDB's general copying policy
+has not been treated as blanket permission for SDR redistribution.
