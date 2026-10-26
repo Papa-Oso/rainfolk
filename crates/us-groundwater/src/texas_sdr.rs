@@ -1,4 +1,4 @@
-//! Offline, synthetic-only Texas SDR construction reports. No transport or index activation.
+//! Bounded Texas SDR construction reports. No transport or index activation.
 //! Reuses the producer's compact JSON encoding, SHA-256 and artifact descriptors.
 use super::{artifact, encoded, sha256, time_precision};
 use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -18,6 +18,14 @@ pub const FIELDS: [&str; 7] = [
     "BoreholeDepthFt",
     "LocationError",
 ];
+
+/// Exact minimum-field request for the separately authorized one-page public sample.
+pub fn public_query_url() -> String {
+    format!(
+        "{SOURCE}/query?f=json&where=1%3D1&outFields={}&returnGeometry=false&orderByFields=WellReportTrackingNumber&resultRecordCount=200&resultOffset=0",
+        FIELDS.join("%2C")
+    )
+}
 
 // Use the already-locked Serde JSON deserializer to inspect every member before
 // Value's map representation could erase duplicate keys. This bounded preflight
@@ -109,13 +117,19 @@ fn identity(attributes: &Value) -> Option<String> {
 
 fn record(attributes: &Value) -> Result<Value, &'static str> {
     let id = identity(attributes).ok_or("invalid-report-id")?;
-    let latitude = number(&attributes["LatitudeDD"])?.ok_or("missing-coordinates")?;
-    let longitude = number(&attributes["LongitudeDD"])?.ok_or("missing-coordinates")?;
+    let reported_latitude = number(&attributes["LatitudeDD"])?;
+    let reported_longitude = number(&attributes["LongitudeDD"])?;
     // Broad Texas bounding box is an adapter guardrail, not a state polygon check.
     // Never swap axes, geocode, substitute geometry, or synthesize a zero point.
-    if !(25.0..=37.0).contains(&latitude) || !(-107.0..=-93.0).contains(&longitude) {
-        return Err("coordinates-outside-texas-guardrail");
-    }
+    let (latitude, longitude, coordinate_quality) = match (reported_latitude, reported_longitude) {
+        (Some(lat), Some(lon))
+            if (25.0..=37.0).contains(&lat) && (-107.0..=-93.0).contains(&lon) =>
+        {
+            (Some(lat), Some(lon), "unverified-source-coordinates")
+        }
+        (Some(_), Some(_)) => (None, None, "coordinates-outside-texas-guardrail"),
+        _ => (None, None, "missing-coordinates"),
+    };
     let location_error = if missing(&attributes["LocationError"]) {
         None
     } else {
@@ -126,11 +140,9 @@ fn record(attributes: &Value) -> Result<Value, &'static str> {
                 .ok_or("invalid-location-error")?,
         )
     };
-    // No coded-value domain/definition was supplied in the reviewed metadata.
-    // Nonzero values are held for review, never converted to metres of accuracy.
-    if location_error.is_some_and(|n| n != 0) {
-        return Err("location-error-requires-review");
-    }
+    // No code changes retention or eligibility: its meaning is undocumented.
+    // Valid coordinates remain eligible with an explicit unverified warning.
+    let map_eligible = latitude.is_some();
     let proposed_use = if missing(&attributes["ProposedUse"]) {
         None
     } else {
@@ -160,8 +172,15 @@ fn record(attributes: &Value) -> Result<Value, &'static str> {
     Ok(json!({
         "id":id,"source":"TWDB-SDR",
         "sourceRecordId":attributes["WellReportTrackingNumber"],
+        "sourceRecordLookup":{"url":"https://www3.twdb.texas.gov/apps/WaterDataInteractive/GroundwaterDataViewer/?map=sdr","trackingNumber":attributes["WellReportTrackingNumber"]},
         "recordType":"submitted-driller-construction-report",
-        "longitude":longitude,"latitude":latitude,"coordinateReference":"EPSG:4326",
+        "longitude":longitude,"latitude":latitude,"coordinateReference":null,
+        "serviceCoordinateReference":"EPSG:4326","coordinateVerification":"unverified",
+        "sourceCoordinates":{"latitude":attributes["LatitudeDD"],"longitude":attributes["LongitudeDD"]},
+        "coordinateQuality":coordinate_quality,
+        "mapEligible":map_eligible,
+        "mapSuppressionReason":if map_eligible {Value::Null} else {json!(coordinate_quality)},
+        "locationQualityWarning":if location_error.is_some() {"uninterpreted-location-error; coordinates-unverified"} else {"accuracy-unknown; coordinates-unverified"},
         "locationError":location_error,"coordinateAccuracy":"unknown",
         "proposedUse":proposed_use,"boreholeDepth":{"value":depth,"unit":"ft"},
         "completedAt":completion,"activeWellStatus":"unverified",
@@ -169,7 +188,7 @@ fn record(attributes: &Value) -> Result<Value, &'static str> {
     }))
 }
 
-/// Normalize one bounded synthetic ArcGIS-shaped response. Invalid rows are quarantined;
+/// Normalize one bounded synthetic or explicitly public ArcGIS-shaped response. Invalid rows are quarantined;
 /// malformed envelopes, privacy/schema surprises and limits refuse the entire capture.
 /// `synthetic` is an operator assertion, not an authenticity or rights attestation.
 pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
@@ -180,26 +199,51 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     serde_json::from_slice::<UniqueMembers>(bytes)
         .map_err(|_| "invalid SDR JSON or duplicate member")?;
     let input: Value = serde_json::from_slice(bytes).map_err(|_| "invalid SDR JSON")?;
+    let public = input["kind"] == "rainfolk-texas-sdr-public-capture";
     only_keys(
         &input,
-        &[
-            "schemaVersion",
-            "kind",
-            "synthetic",
-            "sourceUrl",
-            "retrievedAt",
-            "response",
-        ],
+        if public {
+            &[
+                "schemaVersion",
+                "kind",
+                "synthetic",
+                "sourceUrl",
+                "retrievedAt",
+                "response",
+                "queryUrl",
+                "sourceResponseSha256",
+                "sourceSchemaSha256",
+            ]
+        } else {
+            &[
+                "schemaVersion",
+                "kind",
+                "synthetic",
+                "sourceUrl",
+                "retrievedAt",
+                "response",
+            ]
+        },
     )?;
     if input["schemaVersion"] != 1
-        || input["kind"] != "rainfolk-texas-sdr-capture"
-        || input["synthetic"] != true
+        || (!public && input["kind"] != "rainfolk-texas-sdr-capture")
+        || input["synthetic"] != !public
         || input["sourceUrl"] != SOURCE
     {
-        return Err(
-            "SDR requires v1 synthetic capture at fixed source; live ingestion rights pending"
-                .into(),
-        );
+        return Err("SDR requires explicit v1 synthetic/public capture at fixed source".into());
+    }
+    if public {
+        if input["queryUrl"] != public_query_url() {
+            return Err("SDR public capture requires exact bounded minimum-field query".into());
+        }
+        for field in ["sourceResponseSha256", "sourceSchemaSha256"] {
+            if input[field]
+                .as_str()
+                .is_none_or(|s| s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()))
+            {
+                return Err("SDR public capture requires response/schema hashes".into());
+            }
+        }
     }
     if input["retrievedAt"].as_str().and_then(time_precision) != Some("instant") {
         return Err("SDR retrieval requires zoned timestamp".into());
@@ -251,7 +295,16 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     let mut duplicates = 0;
     for (id, versions) in grouped {
         let first = &versions[0].1;
-        if invalid_ids.contains(&id) || versions.iter().any(|(_, value)| value != first) {
+        // Compare canonical bytes, not Value float equality: retained raw source
+        // coordinates can distinguish -0.0 from 0.0 even when JSON values compare equal.
+        let first_bytes = encoded(first)?;
+        let conflicting = versions
+            .iter()
+            .map(|(_, value)| encoded(value))
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|value| *value != first_bytes);
+        if invalid_ids.contains(&id) || conflicting {
             // No arrival-order winner for conflicting versions of one source report.
             for (index, _) in versions {
                 quarantine.push(json!({"rowIndex":index,"sourceId":id,
@@ -263,22 +316,30 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
         let mut normalized = first.clone();
         normalized["contentSha256"] = json!(sha256(&encoded(first)?));
         normalized["provenance"] = json!({"sourceUrl":SOURCE,"retrievedAt":input["retrievedAt"],
-            "captureSha256":input_hash,"synthetic":true});
+            "captureSha256":input_hash,"synthetic":!public});
+        if public {
+            for field in ["queryUrl", "sourceResponseSha256", "sourceSchemaSha256"] {
+                normalized["provenance"][field] = input[field].clone();
+            }
+        }
         records.push(normalized);
     }
     quarantine.sort_by_key(|q| q["rowIndex"].as_u64().unwrap());
+    let mapped = records.iter().filter(|r| r["mapEligible"] == true).count();
     let payload = json!({"schemaVersion":1,"kind":"rainfolk-texas-sdr-construction-records",
-        "synthetic":true,"records":records,"quarantine":quarantine,
+        "synthetic":!public,"records":records,"quarantine":quarantine,
         "coverage":{"complete":false,"stateCode":"48","observations":"not-requested",
             "exceededTransferLimit":response["exceededTransferLimit"],
-            "description":"Synthetic adapter evidence only; construction reports do not verify active wells, ownership or water safety."},
+            "description":if public {"Bounded public SDR construction-report sample; export confidentiality filtering unverified; coordinates unverified; no active-well, ownership or water-safety inference."} else {"Synthetic adapter evidence only; construction reports do not verify active wells, ownership or water safety."}},
         "accounting":{"inputRows":rows.len(),"acceptedRecords":records.len(),
-            "identicalDuplicateRows":duplicates,"quarantinedRows":quarantine.len()}});
+            "identicalDuplicateRows":duplicates,"quarantinedRows":quarantine.len(),
+            "mapEligibleRecords":mapped,"nonmappedRecords":records.len()-mapped}});
     let manifest = json!({"schemaVersion":1,"kind":"rainfolk-texas-sdr-manifest",
         "artifactEncoding":"serde-json-compact-sorted-keys-v1",
         "input":{"bytes":bytes.len(),"sha256":input_hash},
         "payload":artifact(&payload,1,records.len())?,
-        "activation":"offline-review-only","rightsStatus":"confidential-report-exclusions-unresolved"});
+        "activation":if public {"local-review-only"} else {"offline-review-only"},
+        "rightsStatus":if public {"bounded-public-workflow-evidence-export-filter-unverified"} else {"synthetic-evidence-only"}});
     Ok(
         json!({"schemaVersion":1,"kind":"rainfolk-texas-sdr-candidate",
         "manifestSha256":sha256(&encoded(&manifest)?),"manifest":manifest,"payload":payload}),

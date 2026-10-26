@@ -39,8 +39,8 @@ fn synthetic_fixture_normalizes_and_accounts_for_every_row() {
     let payload = &result["payload"];
     assert_eq!(
         payload["accounting"],
-        json!({"inputRows":4,"acceptedRecords":2,
-        "identicalDuplicateRows":0,"quarantinedRows":2})
+        json!({"inputRows":4,"acceptedRecords":4,
+        "identicalDuplicateRows":0,"quarantinedRows":0,"mapEligibleRecords":3,"nonmappedRecords":1})
     );
     let record = &payload["records"][0];
     assert_eq!(record["id"], "TWDB-SDR-000000000000001");
@@ -59,10 +59,18 @@ fn synthetic_fixture_normalizes_and_accounts_for_every_row() {
     assert_eq!(payload["coverage"]["complete"], false);
     assert_eq!(payload["coverage"]["exceededTransferLimit"], true);
     assert_eq!(result["manifest"]["activation"], "offline-review-only");
-    assert_eq!(payload["quarantine"][0]["reason"], "missing-coordinates");
     assert_eq!(
-        payload["quarantine"][1]["reason"],
-        "location-error-requires-review"
+        payload["records"][2]["coordinateQuality"],
+        "missing-coordinates"
+    );
+    assert_eq!(payload["records"][2]["mapEligible"], false);
+    assert_eq!(payload["records"][3]["locationError"], 1);
+    assert_eq!(payload["records"][3]["mapEligible"], true);
+    assert!(
+        payload["records"][3]["locationQualityWarning"]
+            .as_str()
+            .unwrap()
+            .contains("uninterpreted")
     );
 }
 
@@ -90,17 +98,53 @@ fn missing_optional_values_stay_null_and_zero_depth_stays_zero() {
 
 #[test]
 fn coordinates_are_never_swapped_coerced_or_invented() {
-    for (field, value) in [("LatitudeDD", json!(null)), ("LongitudeDD", json!(""))] {
-        assert_eq!(reason(field, value), "missing-coordinates");
-    }
-    for (field, value) in [
-        ("LatitudeDD", json!(91)),
-        ("LongitudeDD", json!(181)),
-        ("LatitudeDD", json!(-97.75)),
-        ("LongitudeDD", json!(0)),
-        ("LatitudeDD", json!(40)),
+    for (field, value, quality) in [
+        ("LatitudeDD", json!(null), "missing-coordinates"),
+        ("LongitudeDD", json!(""), "missing-coordinates"),
+        (
+            "LatitudeDD",
+            json!(91),
+            "coordinates-outside-texas-guardrail",
+        ),
+        (
+            "LongitudeDD",
+            json!(181),
+            "coordinates-outside-texas-guardrail",
+        ),
+        (
+            "LatitudeDD",
+            json!(-97.75),
+            "coordinates-outside-texas-guardrail",
+        ),
+        (
+            "LongitudeDD",
+            json!(0),
+            "coordinates-outside-texas-guardrail",
+        ),
+        (
+            "LatitudeDD",
+            json!(40),
+            "coordinates-outside-texas-guardrail",
+        ),
     ] {
-        assert_eq!(reason(field, value), "coordinates-outside-texas-guardrail");
+        let mut input = one();
+        input["response"]["features"][0]["attributes"][field] = value.clone();
+        let result = run(&input);
+        let record = &result["payload"]["records"][0];
+        assert_eq!(record["mapEligible"], false);
+        assert!(record["latitude"].is_null());
+        assert!(record["longitude"].is_null());
+        assert_eq!(record["coordinateQuality"], quality);
+        assert_eq!(
+            record["sourceCoordinates"][if field == "LatitudeDD" {
+                "latitude"
+            } else {
+                "longitude"
+            }],
+            value
+        );
+        assert_eq!(result["payload"]["accounting"]["acceptedRecords"], 1);
+        assert_eq!(result["payload"]["accounting"]["nonmappedRecords"], 1);
     }
     for value in [
         json!("NaN"),
@@ -115,11 +159,16 @@ fn coordinates_are_never_swapped_coerced_or_invented() {
 
 #[test]
 fn location_error_is_preserved_without_an_accuracy_claim() {
-    for value in [json!(1), json!(-1), json!(32767)] {
-        assert_eq!(
-            reason("LocationError", value),
-            "location-error-requires-review"
-        );
+    for value in [json!(null), json!(0), json!(1), json!(-1), json!(32767)] {
+        let mut input = one();
+        input["response"]["features"][0]["attributes"]["LocationError"] = value.clone();
+        let result = run(&input);
+        let record = &result["payload"]["records"][0];
+        assert_eq!(record["locationError"], value);
+        assert_eq!(record["mapEligible"], true);
+        assert_eq!(record["coordinateAccuracy"], "unknown");
+        assert_eq!(record["coordinateVerification"], "unverified");
+        assert_eq!(result["payload"]["accounting"]["acceptedRecords"], 1);
     }
     for value in [json!(1.5), json!(true), json!("0"), json!(32768)] {
         assert_eq!(reason("LocationError", value), "invalid-location-error");
@@ -171,7 +220,7 @@ fn malformed_dates_depths_uses_and_ids_are_quarantined() {
 fn same_location_distinct_source_ids_remain_distinct() {
     let result = run(&capture());
     let records = result["payload"]["records"].as_array().unwrap();
-    assert_eq!(records.len(), 2);
+    assert_eq!(records.len(), 4);
     assert_ne!(records[0]["id"], records[1]["id"]);
     assert_eq!(records[0]["latitude"], records[1]["latitude"]);
     assert_eq!(records[0]["longitude"], records[1]["longitude"]);
@@ -191,7 +240,7 @@ fn identical_reports_deduplicate_only_by_source_id() {
     assert_eq!(
         result["payload"]["accounting"],
         json!({"inputRows":2,"acceptedRecords":1,
-        "identicalDuplicateRows":1,"quarantinedRows":0})
+        "identicalDuplicateRows":1,"quarantinedRows":0,"mapEligibleRecords":1,"nonmappedRecords":0})
     );
 }
 
@@ -216,7 +265,7 @@ fn signed_zero_depth_is_canonical_before_duplicate_comparison_and_hashing() {
     assert_eq!(
         first["payload"]["accounting"],
         json!({"inputRows":3,"acceptedRecords":1,
-        "identicalDuplicateRows":2,"quarantinedRows":0})
+        "identicalDuplicateRows":2,"quarantinedRows":0,"mapEligibleRecords":1,"nonmappedRecords":0})
     );
     assert_eq!(
         serde_json::to_string(&first_record["boreholeDepth"]).unwrap(),
@@ -306,7 +355,7 @@ fn conflicting_report_versions_have_no_arrival_order_winner() {
 fn invalid_version_prevents_admission_of_another_row_with_same_id() {
     let mut input = one();
     let mut invalid = input["response"]["features"][0].clone();
-    invalid["attributes"]["LatitudeDD"] = Value::Null;
+    invalid["attributes"]["BoreholeDepthFt"] = json!(-1);
     input["response"]["features"]
         .as_array_mut()
         .unwrap()
@@ -320,7 +369,7 @@ fn invalid_version_prevents_admission_of_another_row_with_same_id() {
     );
     assert_eq!(
         result["payload"]["quarantine"][1]["reason"],
-        "missing-coordinates"
+        "negative-borehole-depth"
     );
 }
 
@@ -409,6 +458,59 @@ fn envelopes_rights_and_budgets_fail_closed() {
     assert!(normalize(&serde_json::to_vec(&input).unwrap()).is_err());
     assert!(normalize(&vec![b' '; MAX_BYTES + 1]).is_err());
     assert!(normalize(b"{").is_err());
+}
+
+#[test]
+fn public_capture_is_explicit_bounded_and_distinct_from_synthetic_evidence() {
+    let mut input = capture();
+    input["kind"] = json!("rainfolk-texas-sdr-public-capture");
+    input["synthetic"] = json!(false);
+    input["queryUrl"] = json!(gev_us_groundwater::texas_sdr::public_query_url());
+    input["sourceResponseSha256"] = json!("a".repeat(64));
+    input["sourceSchemaSha256"] = json!("b".repeat(64));
+    let result = run(&input);
+    assert_eq!(result["payload"]["synthetic"], false);
+    assert_eq!(result["manifest"]["activation"], "local-review-only");
+    assert_eq!(result["payload"]["accounting"]["acceptedRecords"], 4);
+    assert_eq!(
+        result["payload"]["records"][0]["provenance"]["sourceResponseSha256"],
+        "a".repeat(64)
+    );
+    assert_eq!(
+        result["payload"]["records"][0]["provenance"]["synthetic"],
+        false
+    );
+    for (key, value) in [
+        ("queryUrl", json!("https://example.com/")),
+        ("sourceSchemaSha256", json!("bad")),
+        ("sourceResponseSha256", Value::Null),
+        ("synthetic", json!(true)),
+    ] {
+        let mut bad = input.clone();
+        bad[key] = value;
+        assert!(normalize(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+}
+
+#[test]
+fn retained_raw_coordinate_versions_cannot_have_an_arrival_order_winner() {
+    let mut input = one();
+    let template = input["response"]["features"][0].clone();
+    let rows = [json!(-0.0), json!(0.0)].map(|value| {
+        let mut row = template.clone();
+        row["attributes"]["LatitudeDD"] = value;
+        row
+    });
+    input["response"]["features"] = json!(rows);
+    for _ in 0..2 {
+        let result = run(&input);
+        assert_eq!(result["payload"]["accounting"]["acceptedRecords"], 0);
+        assert_eq!(result["payload"]["accounting"]["quarantinedRows"], 2);
+        input["response"]["features"]
+            .as_array_mut()
+            .unwrap()
+            .reverse();
+    }
 }
 
 #[test]

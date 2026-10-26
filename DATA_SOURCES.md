@@ -25,9 +25,12 @@ is supported.
 ## Texas SDR offline candidate
 
 `fixtures/texas-sdr/synthetic-v1.json` contains invented construction-report rows
-only, with no downloaded SDR records. The bounded Rust adapter is synthetic-only;
-it excludes owner/contact/address fields and does not activate the USGS index.
-See [the SDR source contract](docs/TEXAS_SDR.md) for official metadata/policy
-links, normalization rules and the unresolved confidential-report exclusion
-blocker under Texas Occupations Code 1901.251(c). TWDB's general copying policy
-has not been treated as blanket permission for SDR redistribution.
+only, with no downloaded SDR records. The Rust adapter distinguishes synthetic
+and explicit public captures and does not activate the USGS index. The authorized
+public pilot's metadata request succeeded, but its page request stopped on a source
+API error; no live records were retained. The minimum-field pilot does not fetch
+owner/contact/address values; this is not a blanket policy against useful public
+organization/professional/site metadata. See [the SDR source contract](docs/TEXAS_SDR.md)
+for primary evidence supporting the public workflow, field policy, normalization,
+remaining export-filter uncertainty and observed source-error blocker. No blanket
+redistribution license or publication approval is claimed.

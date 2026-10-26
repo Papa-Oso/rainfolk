@@ -33,15 +33,17 @@ def main():
     assert candidate['manifestSha256'] == digest(manifest)
     assert manifest['payload']['sha256'] == digest(payload)
     assert manifest['payload']['bytes'] == len(compact(payload))
-    assert payload['accounting'] == dict(inputRows=4, acceptedRecords=2,
-                                      identicalDuplicateRows=0, quarantinedRows=2)
+    assert payload['accounting'] == dict(inputRows=4, acceptedRecords=4,
+                                      identicalDuplicateRows=0, quarantinedRows=0,
+                                      mapEligibleRecords=3, nonmappedRecords=1)
     for record in payload['records']:
         content = {k: v for k, v in record.items() if k not in ('contentSha256', 'provenance')}
         assert record['contentSha256'] == digest(content)
     work = ROOT / '.temp-gev/texas-sdr-offline'
     work.mkdir(parents=True, exist_ok=True)
     (work / 'candidate.json').write_bytes(first)
-    print(json.dumps(dict(synthetic=True, acceptedRecords=2, quarantinedRows=2,
+    print(json.dumps(dict(synthetic=True, acceptedRecords=4, quarantinedRows=0,
+                          mapEligibleRecords=3, nonmappedRecords=1,
                           identicalReplay=True, hashesVerified=True, liveRecords=0,
                           payloadSha256=manifest['payload']['sha256'])))
 
