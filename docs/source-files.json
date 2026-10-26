@@ -177,6 +177,10 @@
     {
       "path": "scripts/usgs-key.ps1",
       "change": "Exclude nonportable historical Benchmark action."
+    },
+    {
+      "path": "crates/us-groundwater/src/bin/well_index.rs",
+      "change": "Local geographic count format v2: first-four-level overview, two-degree fine subtrees, immutable hashes, independent conservation and unchanged-subtree tests. No renderer/backend/dependency change."
     }
   ]
 }

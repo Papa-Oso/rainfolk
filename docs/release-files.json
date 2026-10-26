@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "baseCommit": "9ae3e61a658fa77ccc708ee5b9fd18dd12b86fdd",
+  "baseCommit": "a815b559f5b0f7cc8d8616055d4069dc794e5a77",
   "files": [
     {
       "path": ".gitattributes",
@@ -269,8 +269,8 @@
     },
     {
       "path": "crates/us-groundwater/src/bin/well_index.rs",
-      "bytes": 34832,
-      "sha256": "1a3a33fc591e4e076c1f57abf118a6250126cbbbea997225cd2a81f85c8c19c5"
+      "bytes": 43023,
+      "sha256": "07c70a90c6286f2bcbf6f9769165e9db82ad797ba1dd3c30a85a5cdb5cd13c8b"
     },
     {
       "path": "crates/us-groundwater/src/bin/well_jobs.rs",
@@ -309,8 +309,8 @@
     },
     {
       "path": "docs/ARTIFACT_CONTRACT.md",
-      "bytes": 2408,
-      "sha256": "ce150cdd1a8479acff44fb6a0030298a4894692090112735303ef55c5e911f87"
+      "bytes": 4630,
+      "sha256": "e842d88a6cc26ff0a6d118b0f2717abd237ae867de8046e704b4641308c8d240"
     },
     {
       "path": "docs/GEV_INTEGRATION.md",
@@ -334,8 +334,8 @@
     },
     {
       "path": "docs/source-files.json",
-      "bytes": 9074,
-      "sha256": "f26696706db7f5af41fa2118390718aebb22a3aab87f06a7badd3b094ee80bc1"
+      "bytes": 9364,
+      "sha256": "fecd67fa065718f7bc237867a13958a2cfb908a2686397acae20d76736e48a8e"
     },
     {
       "path": "examples/offline.py",

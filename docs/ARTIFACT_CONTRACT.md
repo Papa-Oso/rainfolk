@@ -33,3 +33,37 @@ bounded visible-area detail or complete counts. Source coverage is partial;
 unrendered or absent records never mean no wells. The app needs no Cargo runtime,
 collector key, database or Rainfolk service. No GEV application is bundled here.
 See GEV_INTEGRATION.md for the separate delivery/reproducibility gate.
+
+## Partitioned count summaries (local format extension)
+
+The index remains `gev-well-spatial-index`, schema version 1. Its `aggregates`
+reference now declares schema version 2 and kind `gev-well-partitioned-counts`.
+It references one immutable `overview` with the first four existing grid levels
+(32, 8, 2 and 0.5 degrees). The finer levels (0.125 and 0.03125 degrees) contain
+`chunks` anchored to existing 2-degree parents. Every reference has URL, SHA-256
+and byte length; fine references also have parent bounds, population and occupied
+cell count. Global total is catalog records, never a screen count or complete
+physical-well census.
+
+Chunk bodies reuse the count-grid/cell representation with one level,
+`parentBounds` and a parent-local `total`. Counts and record-weighted centers
+reconcile to that overview parent. Every level reconciles to the retained stable
+IDs before publication. Unchanged subtrees reuse hashes even when another area's
+population changes. Count files are capped at 8 MiB and use the existing immutable
+staged write path and writer lock. Previous monoliths/index backups are retained.
+
+The updated GEV consumer accepts both formats. It first reads the overview, then
+only intersecting fine subtrees within bounded byte/cell/request budgets;
+otherwise complete coarser counts remain available. Stale/failed work cannot
+replace the last-good display. Renderer, IDs, readings, provenance and incomplete
+source coverage are unchanged. This extension is local/uncommitted pending
+separate review; published a815b55 still emits the earlier format.
+
+Local full-corpus verification retained all 1,042,777 source IDs, complete record
+fingerprints and acquisition provenance fingerprints. Every one of the six levels
+reconciles to those records. Output: 663 summary files (one 366,923-byte overview
+plus 331 chunks at each fine level), largest fine chunk 320,637 bytes. These are
+local measurements of the pinned historical corpus, not current live coverage or
+an automatic public data release. No collection, new dependency or service was
+used. The compatible consumer enforces exact chunk byte lengths/hashes, adjacent
+hierarchy/weighted-center conservation, complete subtrees and bounded caching.

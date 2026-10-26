@@ -96,6 +96,99 @@ fn write_immutable(out: &Path, name: &str, bytes: &[u8]) -> Result<(), Box<dyn s
     Ok(())
 }
 type DetailRow = (Value, Vec<Value>);
+
+fn publish_count_file(out: &Path, value: &Value) -> Result<Value, Box<dyn std::error::Error>> {
+    let bytes = serde_json::to_vec(value)?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err("partitioned aggregate byte cap".into());
+    }
+    let digest = hash(&bytes);
+    let name = format!("{digest}.counts.json");
+    write_immutable(out, &name, &bytes)?;
+    Ok(json!({"url":name,"sha256":digest,"bytes":bytes.len()}))
+}
+
+// Keep the existing cell representation, but publish a small global prefix and
+// complete fine subtrees anchored to its existing two-degree parent cells.
+fn publish_partitioned_counts(
+    out: &Path,
+    levels: &[Value],
+    total: usize,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    if levels.len() != 6 {
+        return Err("count level count".into());
+    }
+    let overview = publish_count_file(
+        out,
+        &json!({"schemaVersion":1,"kind":"gev-well-count-grids","centerMethod":"record-mean","total":total,"levels":&levels[..4]}),
+    )?;
+    let parent_key = |bounds: &Value| -> Result<(i32, i32), Box<dyn std::error::Error>> {
+        let x = bounds[0].as_f64().ok_or("parent longitude")?;
+        let y = bounds[1].as_f64().ok_or("parent latitude")?;
+        Ok((
+            ((x + 180.0) / 2.0).floor() as i32,
+            ((y + 90.0) / 2.0).floor() as i32,
+        ))
+    };
+    let mut parents = BTreeMap::new();
+    for cell in levels[2]["cells"]
+        .as_array()
+        .ok_or("missing parent cells")?
+    {
+        if parents.insert(parent_key(&cell["bounds"])?, cell).is_some() {
+            return Err("duplicate count parent".into());
+        }
+    }
+    let mut references = Vec::new();
+    for level in &levels[4..] {
+        let mut groups: BTreeMap<(i32, i32), Vec<Value>> = BTreeMap::new();
+        for cell in level["cells"].as_array().ok_or("missing fine cells")? {
+            groups
+                .entry(parent_key(&cell["bounds"])?)
+                .or_default()
+                .push(cell.clone());
+        }
+        if groups.len() != parents.len() {
+            return Err("missing fine count parent".into());
+        }
+        let mut chunks = Vec::new();
+        let mut conserved = 0_u64;
+        for (key, cells) in groups {
+            let parent = parents.get(&key).ok_or("unknown count parent")?;
+            let count: u64 = cells.iter().map(|c| c["count"].as_u64().unwrap()).sum();
+            if count != parent["count"].as_u64().ok_or("parent count")? {
+                return Err("count subtree conservation".into());
+            }
+            for axis in 0..2 {
+                let weighted: f64 = cells
+                    .iter()
+                    .map(|c| {
+                        c["center"][axis].as_f64().unwrap() * c["count"].as_u64().unwrap() as f64
+                    })
+                    .sum();
+                if (weighted - parent["center"][axis].as_f64().unwrap() * count as f64).abs()
+                    > 1e-7 * count as f64
+                {
+                    return Err("count subtree center".into());
+                }
+            }
+            let chunk = json!({"schemaVersion":1,"kind":"gev-well-count-grids","centerMethod":"record-mean","total":count,"parentBounds":parent["bounds"],"levels":[{"degrees":level["degrees"],"total":count,"cells":cells}]});
+            let mut reference = publish_count_file(out, &chunk)?;
+            reference["bounds"] = parent["bounds"].clone();
+            reference["count"] = json!(count);
+            reference["cellCount"] = json!(cells.len());
+            chunks.push(reference);
+            conserved += count;
+        }
+        if conserved != total as u64 {
+            return Err("partitioned level conservation".into());
+        }
+        references.push(json!({"degrees":level["degrees"],"cellCount":level["cells"].as_array().unwrap().len(),"chunks":chunks}));
+    }
+    Ok(
+        json!({"schemaVersion":2,"kind":"gev-well-partitioned-counts","total":total,"overview":overview,"levels":references}),
+    )
+}
 fn split_detail(
     out: &Path,
     b: [f64; 4],
@@ -231,7 +324,14 @@ fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
     let mut overlap_count = 0usize;
     let mut differing_versions = 0usize;
     let mut fallback = Value::Null;
-    for item in candidates {
+    for (candidate_number, item) in candidates.iter().enumerate() {
+        if candidate_number % 100 == 0 {
+            eprintln!(
+                "well_index: validating candidate {}/{}",
+                candidate_number + 1,
+                candidates.len()
+            );
+        }
         let path = input
             .parent()
             .unwrap()
@@ -344,16 +444,8 @@ fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
         let cells: Vec<Value> = grid.iter().map(|(&(x,y),&(count,lon_sum,lat_sum))| json!({"center":[lon_sum/count as f64,lat_sum/count as f64],"bounds":[x as f64*size-180.0,y as f64*size-90.0,((x+1) as f64*size-180.0).min(180.0),((y+1) as f64*size-90.0).min(90.0)],"count":count})).collect();
         json!({"degrees":size,"total":total,"cells":cells})
     }).collect();
-    let aggregate_bytes = serde_json::to_vec(
-        &json!({"schemaVersion":1,"kind":"gev-well-count-grids","centerMethod":"record-mean","total":seen.len(),"levels":aggregate_levels}),
-    )?;
-    if aggregate_bytes.len() > 32 * 1024 * 1024 {
-        return Err("aggregate byte cap".into());
-    }
-    let aggregate_hash = hash(&aggregate_bytes);
-    let aggregate_name = format!("{aggregate_hash}.counts.json");
-    write_immutable(out, &aggregate_name, &aggregate_bytes)?;
-    let index = json!({"schemaVersion":1,"kind":"gev-well-spatial-index","coverageComplete":false,"snapshot":descriptor["snapshot"],"indexedRecords":seen.len(),"overlapAudit":{"url":audit_name,"sha256":audit_hash,"overlapIds":overlap_count,"differingSerializedVersions":differing_versions},"fallbackAcquisition":fallback,"regions":regions,"aggregates":{"url":aggregate_name,"sha256":aggregate_hash,"bytes":aggregate_bytes.len()}});
+    let aggregate_reference = publish_partitioned_counts(out, &aggregate_levels, seen.len())?;
+    let index = json!({"schemaVersion":1,"kind":"gev-well-spatial-index","coverageComplete":false,"snapshot":descriptor["snapshot"],"indexedRecords":seen.len(),"overlapAudit":{"url":audit_name,"sha256":audit_hash,"overlapIds":overlap_count,"differingSerializedVersions":differing_versions},"fallbackAcquisition":fallback,"regions":regions,"aggregates":aggregate_reference});
     let bytes = serde_json::to_vec(&index)?;
     if bytes.len() > 8 * 1024 * 1024 {
         return Err("index byte cap".into());
@@ -414,6 +506,101 @@ mod tests {
         let descriptor = dir.join("batches.json");
         fs::write(&descriptor, serde_json::to_vec(&json!({"snapshot":"offline-test","candidates":[{"path":"candidate.json","sha256":hash(&bytes)}]})).unwrap()).unwrap();
         descriptor
+    }
+    #[test]
+    fn partitioned_levels_conserve_all_cells_and_reuse_unchanged_subtrees() {
+        let dir = scratch("partitioned");
+        let make_levels = |points: &[(f64, f64)]| -> Vec<Value> {
+            [32.0_f64,8.0,2.0,0.5,0.125,0.03125].iter().map(|size| {
+                let mut groups: BTreeMap<(i32,i32),(u64,f64,f64)> = BTreeMap::new();
+                for &(lon,lat) in points {
+                    let entry = groups.entry((((lon+180.0)/size).floor() as i32,((lat+90.0)/size).floor() as i32)).or_default();
+                    entry.0+=1;entry.1+=lon;entry.2+=lat;
+                }
+                let cells:Vec<Value>=groups.iter().map(|(&(x,y),&(count,lon,lat))|json!({"bounds":[x as f64*size-180.0,y as f64*size-90.0,((x+1) as f64*size-180.0).min(180.0),((y+1) as f64*size-90.0).min(90.0)],"count":count,"center":[lon/count as f64,lat/count as f64]})).collect();
+                json!({"degrees":size,"total":points.len(),"cells":cells})
+            }).collect()
+        };
+        let points = [
+            (-0.01, 1.0),
+            (0.0, 1.0),
+            (0.01, 1.0),
+            (2.01, 1.0),
+            (-179.99, 1.0),
+            (179.99, 1.0),
+        ];
+        let levels = make_levels(&points);
+        let reference = publish_partitioned_counts(&dir, &levels, points.len()).unwrap();
+        assert_eq!(reference["schemaVersion"], 2);
+        let overview: Value = serde_json::from_slice(
+            &fs::read(dir.join(reference["overview"]["url"].as_str().unwrap())).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(overview["levels"].as_array().unwrap(), &levels[..4]);
+        for (i, level) in reference["levels"].as_array().unwrap().iter().enumerate() {
+            let mut actual = BTreeMap::new();
+            let mut sum = 0;
+            for part in level["chunks"].as_array().unwrap() {
+                let bytes = fs::read(dir.join(part["url"].as_str().unwrap())).unwrap();
+                assert_eq!(hash(&bytes), part["sha256"].as_str().unwrap());
+                assert_eq!(bytes.len() as u64, part["bytes"].as_u64().unwrap());
+                let chunk: Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(chunk["parentBounds"], part["bounds"]);
+                assert_eq!(chunk["total"], part["count"]);
+                sum += part["count"].as_u64().unwrap();
+                for cell in chunk["levels"][0]["cells"].as_array().unwrap() {
+                    assert!(
+                        actual
+                            .insert(
+                                serde_json::to_string(&cell["bounds"]).unwrap(),
+                                cell.clone()
+                            )
+                            .is_none()
+                    );
+                }
+            }
+            let expected: BTreeMap<_, _> = levels[i + 4]["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| (serde_json::to_string(&c["bounds"]).unwrap(), c.clone()))
+                .collect();
+            assert_eq!(actual, expected);
+            assert_eq!(sum, points.len() as u64);
+        }
+        let first = reference["levels"][0]["chunks"][0].clone();
+        let stamp = fs::metadata(dir.join(first["url"].as_str().unwrap()))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(
+            publish_partitioned_counts(&dir, &levels, points.len()).unwrap(),
+            reference
+        );
+        let mut extra = points.to_vec();
+        extra.push((100.0, 30.0));
+        let updated = publish_partitioned_counts(&dir, &make_levels(&extra), extra.len()).unwrap();
+        assert!(
+            updated["levels"][0]["chunks"]
+                .as_array()
+                .unwrap()
+                .contains(&first)
+        );
+        assert_eq!(
+            stamp,
+            fs::metadata(dir.join(first["url"].as_str().unwrap()))
+                .unwrap()
+                .modified()
+                .unwrap()
+        );
+        let mut bad = levels;
+        bad[4]["cells"][0]["count"] = json!(999);
+        fs::write(dir.join("index.json"), b"last good pointer").unwrap();
+        assert!(publish_partitioned_counts(&dir, &bad, points.len()).is_err());
+        assert_eq!(
+            fs::read(dir.join("index.json")).unwrap(),
+            b"last good pointer"
+        );
     }
     #[test]
     fn observation_coverage_follows_actual_acquisitions_and_readings() {
@@ -637,7 +824,7 @@ mod tests {
         let first = run(&descriptor, &out).unwrap();
         let current: Value =
             serde_json::from_slice(&fs::read(out.join("index.json")).unwrap()).unwrap();
-        let counts_path = out.join(current["aggregates"]["url"].as_str().unwrap());
+        let counts_path = out.join(current["aggregates"]["overview"]["url"].as_str().unwrap());
         let counts_bytes = fs::read(&counts_path).unwrap();
         let counts_time = fs::metadata(&counts_path).unwrap().modified().unwrap();
         let good_index = fs::read(out.join("index.json")).unwrap();
@@ -686,7 +873,7 @@ mod tests {
             serde_json::from_slice(&fs::read(out.join("index.json")).unwrap()).unwrap();
         assert_eq!(union["regions"], before_union["regions"]);
         let counts: Value = serde_json::from_slice(
-            &fs::read(out.join(union["aggregates"]["url"].as_str().unwrap())).unwrap(),
+            &fs::read(out.join(union["aggregates"]["overview"]["url"].as_str().unwrap())).unwrap(),
         )
         .unwrap();
         let mut longitude_sum = 0.0;
