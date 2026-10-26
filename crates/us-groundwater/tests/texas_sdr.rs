@@ -468,6 +468,8 @@ fn public_capture_is_explicit_bounded_and_distinct_from_synthetic_evidence() {
     input["queryUrl"] = json!(gev_us_groundwater::texas_sdr::public_query_url());
     input["sourceResponseSha256"] = json!("a".repeat(64));
     input["sourceSchemaSha256"] = json!("b".repeat(64));
+    input["response"]["spatialReferenceBasis"] =
+        json!("validated-layer-schema; attributes-unverified");
     let result = run(&input);
     assert_eq!(result["payload"]["synthetic"], false);
     assert_eq!(result["manifest"]["activation"], "local-review-only");
@@ -480,6 +482,15 @@ fn public_capture_is_explicit_bounded_and_distinct_from_synthetic_evidence() {
         result["payload"]["records"][0]["provenance"]["synthetic"],
         false
     );
+    assert_eq!(
+        result["payload"]["records"][0]["provenance"]["serviceSpatialReferenceBasis"],
+        "validated-layer-schema; attributes-unverified"
+    );
+    for basis in [Value::Null, json!("inferred-from-coordinates")] {
+        let mut bad = input.clone();
+        bad["response"]["spatialReferenceBasis"] = basis;
+        assert!(normalize(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
     for (key, value) in [
         ("queryUrl", json!("https://example.com/")),
         ("sourceSchemaSha256", json!("bad")),

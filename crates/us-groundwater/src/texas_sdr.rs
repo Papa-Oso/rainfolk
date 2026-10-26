@@ -251,13 +251,29 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     let response = &input["response"];
     only_keys(
         response,
-        &["spatialReference", "features", "exceededTransferLimit"],
+        &[
+            "spatialReference",
+            "spatialReferenceBasis",
+            "features",
+            "exceededTransferLimit",
+        ],
     )?;
     only_keys(&response["spatialReference"], &["wkid"])?;
     if response["spatialReference"]["wkid"] != 4326
         || !response["exceededTransferLimit"].is_boolean()
     {
         return Err("SDR requires EPSG:4326 and explicit transfer-limit flag".into());
+    }
+    if public
+        && !matches!(
+            response["spatialReferenceBasis"].as_str(),
+            Some(
+                "source-response; attributes-unverified"
+                    | "validated-layer-schema; attributes-unverified"
+            )
+        )
+    {
+        return Err("SDR public capture requires explicit service CRS provenance basis".into());
     }
     let rows = response["features"]
         .as_array()
@@ -321,6 +337,8 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
             for field in ["queryUrl", "sourceResponseSha256", "sourceSchemaSha256"] {
                 normalized["provenance"][field] = input[field].clone();
             }
+            normalized["provenance"]["serviceSpatialReferenceBasis"] =
+                response["spatialReferenceBasis"].clone();
         }
         records.push(normalized);
     }

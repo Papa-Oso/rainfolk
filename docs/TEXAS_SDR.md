@@ -46,19 +46,41 @@ Metadata first, then one-second pacing and one fixed page: where=1=1, seven
 explicit outFields, returnGeometry=false, tracking-number ordering, limit 200,
 offset 0. No wildcard, pagination, retry, credential or index activation.
 Caps: two requests, 200 rows, 512 KiB per response, 1 MiB total, 15-second socket
-timeout and 60-second elapsed checks around reads. Schema change, redirects,
+inactivity timeout and a cancellable 60-second total deadline. The parent kills
+and waits for a disposable HTTP worker at the remaining deadline, including
+connect, headers and slow-trickle body reads. Schema change, redirects,
 denial, 429, API errors and limits stop. No automatic budget renewal.
 
 Observed: schema succeeded; query response was rejected with
 "source API error; no retry". Two requests attempted, zero retries, zero valid
 live records retained/accepted/quarantined/nonmapped. No public capture/body was
-saved. The initial value-free handler discarded the service error code; specific
-access denial versus query/server failure is not established. This does not prove
-public data is restricted. The handler now retains only a numeric error code on
-a future authorized attempt, never source messages/values. No repeat was made.
+saved. The initial value-free handler discarded the service error code; its precise
+cause remains unknown. A subsequently authorized diagnostic repeat used the
+identical seven-field query after schema/API-contract inspection. It established
+HTTP 200 carrying ArcGIS error 400: "Unable to complete operation." with detail
+"Unable to perform query operation." This is a query-operation failure, not a
+reported authentication/access denial or rate limit. The service provides no
+more specific root cause. Exact field names, Query capability, ordering and
+pagination flags match the official Esri query contract; no parameter mismatch
+was established, so no speculative query changes or further requests were made.
+
+Across both capture attempts: four transport requests (two schema, two query),
+one explicitly authorized diagnostic repeat, zero automatic retries, zero live
+records retained/normalized. The original total 200-record budget is not reset per
+attempt. Diagnostic response bytes: 9,824; original byte count unknown. Research
+metadata/doc reads are separate from this transport count.
+
+Failure logs now save bounded code/category, recognized generic messages, up to
+three sanitized details, safe request metadata and hashes. Unknown messages are
+omitted; no error response body or record values are persisted. The diagnostic
+retained its validated schema and failure audit, not source records.
 
 Evidence: .temp-gev/texas-sdr-public-attempt-20261026/attempt.json.
-Status: pending source-error diagnosis. A successful run would save schema,
+Diagnostic: .temp-gev/texas-sdr-public-diagnostic-20261026/failure.json.
+Readable aggregate diagnosis: the same directory's diagnosis.json; original
+failure audit is preserved and referenced by SHA-256.
+Status: source query rejected with generic ArcGIS 400; backend reason unreported.
+A successful run would save schema,
 minimum-field response, sanitized capture, timestamps, exact request URL, hashes,
 budgets, attribution and terms/uncertainty links under an ignored local directory.
 Unrequested attributes refuse retention; an automatic numeric ObjectId may be
@@ -78,6 +100,10 @@ network, file, credential or environment.
   response with spatialReference.wkid=4326, explicit exceededTransferLimit Boolean
   and features containing only approved attributes. Service CRS does not verify
   attribute datum; no guessed transformation occurs.
+- Contradictory supplied response CRS refuses retention. If absent, derive the
+  service label only from validated schema and record spatialReferenceBasis as
+  validated-layer-schema or source-response, both marked attributes-unverified.
+  Public captures require the basis; no silent CRS rewriting.
 - Duplicate JSON members anywhere refuse capture before Value maps erase evidence,
   including identical duplicates/escaped equivalent names. Unknown fields, bad
   envelopes, wrong source/CRS and limits also refuse capture. Errors omit source
@@ -144,13 +170,17 @@ tests prove quarantine. Public mode/transport use synthetic or fake responses
 in tests; real records are never relabeled synthetic or committed.
 
 Verified locally: 83 Rust tests (14 core, 46 queue/segment, 6 index, 17 SDR),
-33 Python tests (24 USGS, 9 SDR), locked offline build, formatting and both
+38 Python tests (24 USGS, 14 SDR), locked offline build, formatting and both
 examples passed. Windows index atomic-replacement checks used scoped execution
 approval; no production file-writing/security behavior was changed. The USGS
 example retains six IDs, identical replay, tamper rejection and last-good output;
 index SHA-256 df1666c4381bd32d1bf5baf07ad508eb6eb3851a67ec13e1712fb9160061b7c7.
 Synthetic SDR example independently verifies hashes/replay; payload SHA-256
 ed6789923e13c6a8e3a7860567835c24d5d9e7661687e3248e9ccd8554d4b872.
+New offline regressions cover slow-trickle/connect cancellation, default worker
+selection, contradictory/absent response CRS, explicit Rust CRS provenance,
+safe failure logs and HTTP/embedded denial/429 stops. No extra live query was
+used to test the deadline or CRS corrections.
 
 The workflow checker pins the previous release inventory and rejects this
 development candidate. Manifest/checker remain unchanged; release-inventory

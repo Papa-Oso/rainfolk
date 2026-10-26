@@ -151,7 +151,7 @@ The same Rust crate includes `--texas-sdr-v1` for at most 200 submitted driller
 construction-report rows, with explicit synthetic or public capture types. After building, run
 `python -B examples/texas_sdr_offline.py` for normalization, quarantine, hash and
 replay evidence. The separate bounded Python transport defaults to a zero-request
-dry run. The authorized public pilot stopped on a source API error with no live
-records retained. There is no spatial-index activation or publication.
+dry run. One authorized diagnostic repeat established a generic ArcGIS 400 query
+error; no live records were retained. There is no spatial-index activation or publication.
 See the [source contract, public-field proposal and pilot evidence](docs/TEXAS_SDR.md); construction
 reports do not verify active wells, ownership or water safety.

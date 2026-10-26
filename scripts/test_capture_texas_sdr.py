@@ -6,8 +6,10 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import urllib.error
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name('capture-texas-sdr.py')
 SCRATCH = SCRIPT.parents[1] / '.temp-gev' / 'sdr-transport-tests'
@@ -85,7 +87,8 @@ class CaptureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.capture(target, opener=opener, pause=lambda _: None)
             self.assertEqual(len(opener.urls), 1)
-            self.assertFalse(target.exists())
+            self.assertEqual(module.decode((target / 'failure.json').read_bytes())['retainedRecords'], 0)
+            self.assertFalse((target / 'capture.json').exists())
 
     def test_rate_and_access_denial_have_no_retry_or_saved_body(self):
         for code in (401, 403, 429):
@@ -95,7 +98,11 @@ class CaptureTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, f'HTTP {code}'):
                     module.capture(target, opener=opener, pause=lambda _: None)
                 self.assertEqual(len(opener.urls), 2)
-                self.assertFalse(target.exists())
+                failure = module.decode((target / 'failure.json').read_bytes())
+                self.assertEqual(failure['error']['code'], code)
+                self.assertEqual(failure['error']['category'], 'rate-limit' if code == 429 else 'access-denial')
+                self.assertFalse((target / 'capture.json').exists())
+                self.assertFalse((target / 'public-response.json').exists())
 
     def test_byte_limit_and_time_budget_stop_without_capture(self):
         with self.assertRaisesRegex(ValueError, 'byte budget'):
@@ -133,11 +140,85 @@ class CaptureTests(unittest.TestCase):
                 check(dict(error=dict(code=403, message='PRIVATE-SENTINEL', details=['PRIVATE-SENTINEL'])))
             self.assertNotIn('PRIVATE-SENTINEL', str(error.exception))
 
+    def test_bounded_safe_api_diagnostics_are_persisted_without_record_values(self):
+        error = dict(error=dict(code=400, message='Unable to complete operation.', details=[
+            'Invalid field: LatitudeDD', 'PRIVATE-SENTINEL', 'owner@example.com', 'omitted-extra-detail']),
+            features=[dict(attributes=dict(WellOwner='PRIVATE-SENTINEL'))])
+        opener = Opener([schema(), error])
+        with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
+            target = Path(directory) / 'sample'
+            with self.assertRaises(module.SourceFailure):
+                module.capture(target, opener=opener, pause=lambda _: None)
+            raw = (target / 'failure.json').read_text()
+            failure = json.loads(raw)
+            self.assertEqual(len(opener.urls), 2)
+            self.assertEqual(failure['error']['code'], 400)
+            self.assertEqual(failure['error']['category'], 'invalid-query')
+            self.assertEqual(failure['error']['message'], 'Unable to complete operation.')
+            self.assertEqual(failure['error']['details'], ['Invalid field: LatitudeDD',
+                'Unrecognized source message omitted.', 'Unrecognized source message omitted.'])
+            self.assertNotIn('PRIVATE-SENTINEL', raw)
+            self.assertNotIn('owner@example.com', raw)
+            self.assertNotIn('features', failure)
+            self.assertFalse((target / 'public-response.json').exists())
+            self.assertTrue((target / 'schema.json').exists())
+
+    def test_embedded_denials_stop_without_retry(self):
+        for code in (401, 403, 429, 498, 499):
+            opener = Opener([schema(), dict(error=dict(code=code))])
+            with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
+                target = Path(directory) / 'sample'
+                with self.assertRaises(module.SourceFailure):
+                    module.capture(target, opener=opener, pause=lambda _: None)
+                self.assertEqual(len(opener.urls), 2)
+                failure = module.decode((target / 'failure.json').read_bytes())
+                self.assertEqual(failure['error']['category'], 'rate-limit' if code == 429 else 'access-denial')
+
     def test_default_dry_run_requires_no_network(self):
         output = subprocess.check_output([sys.executable, '-B', str(SCRIPT)])
         result = json.loads(output)
         self.assertTrue(result['dryRun'])
         self.assertEqual(result['networkRequests'], 0)
+
+    def test_total_deadline_cancels_connect_and_slow_trickle_worker(self):
+        # No HTTP: the fake child either stalls before headers (connect-like)
+        # or emits bytes frequently enough to evade an inactivity timeout.
+        for source in ('import time; time.sleep(10)',
+            'import sys,time\nfor _ in range(100):\n sys.stdout.buffer.write(b"x"); sys.stdout.flush(); time.sleep(0.02)'):
+            started = time.monotonic()
+            with self.assertRaises(module.SourceFailure) as error:
+                module.request_worker([sys.executable, '-B', '-c', source], 0.2)
+            self.assertEqual(error.exception.info['category'], 'total-deadline')
+            self.assertLess(time.monotonic() - started, 2)
+
+    def test_default_network_path_uses_deadline_worker_for_both_fixed_requests(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
+            target = Path(directory) / 'sample'
+            with mock.patch.object(module, 'request_worker', side_effect=[
+                    module.encoded(schema()), module.encoded(page())]) as worker:
+                evidence = module.capture(target, pause=lambda _: None)
+            self.assertEqual(worker.call_count, 2)
+            self.assertEqual([call.args[0][-1] for call in worker.call_args_list], ['schema', 'query'])
+            self.assertTrue(all(0 < call.args[1] <= module.TIME_LIMIT for call in worker.call_args_list))
+            self.assertEqual(evidence['networkRequests'], 2)
+
+    def test_response_crs_is_checked_and_missing_crs_has_explicit_basis(self):
+        for crs in (dict(wkid=3857), dict(wkid=4326, latestWkid=3857),
+                    dict(wkt='unreviewed'), 'EPSG:4326'):
+            response = page()
+            response['spatialReference'] = crs
+            with self.assertRaisesRegex(ValueError, 'CRS'):
+                self.run_capture([schema(), response])
+        _, absent, _ = self.run_capture([schema(), page()])
+        self.assertEqual(absent['response']['spatialReferenceBasis'],
+                         'validated-layer-schema; attributes-unverified')
+        present = page()
+        present['spatialReference'] = dict(wkid=4326, latestWkid=4326)
+        _, supplied, _ = self.run_capture([schema(), present])
+        self.assertEqual(supplied['response']['spatialReferenceBasis'],
+                         'source-response; attributes-unverified')
+        with self.assertRaises(ValueError):
+            module.sanitize(page())  # absent CRS cannot be invented without schema
 
 
 if __name__ == '__main__':
