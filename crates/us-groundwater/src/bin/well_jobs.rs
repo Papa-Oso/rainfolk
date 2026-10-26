@@ -15,6 +15,8 @@ const MAX_BYTES: usize = 1024 * 1024;
 mod page_segments;
 #[path = "../job_partitions.rs"]
 mod partitions;
+#[path = "../sdr_jobs.rs"]
+mod sdr_jobs;
 fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -40,6 +42,9 @@ fn number(value: &Value, key: &str, min: u64, max: u64) -> Result<u64, String> {
         .ok_or_else(|| format!("invalid budget: {key}"))
 }
 fn validate_config(config: &Value) -> Result<(), String> {
+    if config["adapter"] == "texas-sdr" {
+        return sdr_jobs::validate_config(config);
+    }
     if config["schemaVersion"] == 2 {
         return partitions::validate_config(config);
     }
@@ -248,44 +253,69 @@ impl InventoryAdapter for SourceAdapter {
             if !path.starts_with(self.repo.canonicalize().map_err(|e| e.to_string())?) {
                 return Err("fixture outside repository".into());
             }
-            return read_capped(&path, cap);
+            let bytes = read_capped(&path, cap)?;
+            if item["_sdrAfterObjectId"].is_u64() {
+                sdr_jobs::stage_fixture(cache, &bytes)?;
+            }
+            return Ok(bytes);
         }
-        let mut child = Command::new("python")
-            .arg("-B")
-            .arg(self.repo.join("scripts/capture-usgs-inventory.py"))
-            .args([
-                "--state",
-                item["state"].as_str().unwrap(),
-                "--pages",
-                &budgets["pages"].to_string(),
-                "--limit",
-                &budgets["rowsPerPage"].to_string(),
-                "--page-bytes",
-                &budgets["_pageBytes"]
-                    .as_u64()
-                    .unwrap_or(512 * 1024)
-                    .to_string(),
-                "--max-bytes",
-                &cap.to_string(),
-                "--rate-millis",
-                &budgets["rateMillis"].to_string(),
-            ])
-            .args(
-                budgets["projection"]
-                    .as_str()
-                    .map(|value| ["--properties", value])
-                    .into_iter()
-                    .flatten(),
-            )
-            .args(
-                item["_startUrl"]
-                    .as_str()
-                    .map(|url| ["--start-url", url])
-                    .into_iter()
-                    .flatten(),
-            )
-            .arg("--cache-dir")
-            .arg(cache)
+        let sdr = item["_sdrAfterObjectId"].as_u64();
+        let mut command = Command::new("python");
+        command.arg("-B");
+        if let Some(after) = sdr {
+            command
+                .arg(self.repo.join("scripts/capture-texas-sdr.py"))
+                .arg("--public-sample")
+                .args([
+                    "--after-object-id",
+                    &after.to_string(),
+                    "--record-limit",
+                    &budgets["rowsPerPage"].to_string(),
+                    "--max-seconds",
+                    &seconds.saturating_sub(1).min(60).max(1).to_string(),
+                    "--date-omission-evidence-sha256",
+                    item["_sdrEvidence"].as_str().unwrap(),
+                ])
+                .arg("--output")
+                .arg(cache);
+        } else {
+            command
+                .arg(self.repo.join("scripts/capture-usgs-inventory.py"))
+                .args([
+                    "--state",
+                    item["state"].as_str().unwrap(),
+                    "--pages",
+                    &budgets["pages"].to_string(),
+                    "--limit",
+                    &budgets["rowsPerPage"].to_string(),
+                    "--page-bytes",
+                    &budgets["_pageBytes"]
+                        .as_u64()
+                        .unwrap_or(512 * 1024)
+                        .to_string(),
+                    "--max-bytes",
+                    &cap.to_string(),
+                    "--rate-millis",
+                    &budgets["rateMillis"].to_string(),
+                ])
+                .args(
+                    budgets["projection"]
+                        .as_str()
+                        .map(|value| ["--properties", value])
+                        .into_iter()
+                        .flatten(),
+                )
+                .args(
+                    item["_startUrl"]
+                        .as_str()
+                        .map(|url| ["--start-url", url])
+                        .into_iter()
+                        .flatten(),
+                )
+                .arg("--cache-dir")
+                .arg(cache);
+        }
+        let mut child = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -333,6 +363,18 @@ impl InventoryAdapter for SourceAdapter {
                     .and_then(|value| serde_json::from_str(value).ok())
             })
             .unwrap_or(Value::Null);
+        if sdr.is_some() {
+            self.metrics = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
+                read_capped(&cache.join("failure.json"), MAX_BYTES)
+                    .ok()
+                    .and_then(|b| serde_json::from_slice(&b).ok())
+                    .unwrap_or(Value::Null)
+            });
+            if !status.success() {
+                return Err("SDR transport failed; stopped without retry".into());
+            }
+            return sdr_jobs::cached_capture(cache, false);
+        }
         if !status.success() {
             return Err(String::from_utf8_lossy(&errors).into_owned());
         }
@@ -527,7 +569,18 @@ fn cli() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     validate_config(&config)?;
     let dir = Path::new(&args[2]);
-    let result = if config["schemaVersion"] == 2 {
+    let result = if config["adapter"] == "texas-sdr" {
+        sdr_jobs::execute(
+            &config,
+            dir,
+            args[0] == "status",
+            &mut SourceAdapter {
+                repo: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
+                live: config["mode"] == "live",
+                metrics: Value::Null,
+            },
+        )?
+    } else if config["schemaVersion"] == 2 {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         partitions::execute(
             &config,

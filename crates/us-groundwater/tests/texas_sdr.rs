@@ -713,6 +713,52 @@ fn no_date_batch_short_or_empty_page_never_claims_complete_coverage() {
 }
 
 #[test]
+fn keyset_page_requires_exact_scope_and_verified_oid_chain() {
+    use gev_us_groundwater::texas_sdr::public_job_query_url;
+    let mut input = public_batch(2);
+    input["queryUrl"] = json!(public_job_query_url(10, 2).unwrap());
+    input["pagination"] = json!({"afterObjectId":10,"objectIds":[11,15]});
+    let result = run(&input);
+    assert_eq!(result["payload"]["pagination"], input["pagination"]);
+    assert_eq!(result["payload"]["coverage"]["complete"], false);
+    for pagination in [
+        json!({"afterObjectId":9,"objectIds":[11,15]}),
+        json!({"afterObjectId":10.0,"objectIds":[11,15]}),
+        json!({"afterObjectId":10,"objectIds":[15,11]}),
+        json!({"afterObjectId":10,"objectIds":[11,11]}),
+        json!({"afterObjectId":10,"objectIds":[10,15]}),
+        json!({"afterObjectId":10,"objectIds":[11]}),
+        json!({"afterObjectId":10,"objectIds":[11,2147483648_u64]}),
+    ] {
+        let mut bad = input.clone();
+        bad["pagination"] = pagination;
+        assert!(normalize(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+    let query = input["queryUrl"].as_str().unwrap();
+    for url in [
+        query.replace("%3E10", "%3E010"),
+        query.replace("ObjectId%3E10", "1%3D1"),
+        format!("{query}&resultOffset=0"),
+        query.replace("resultRecordCount=2", "resultRecordCount=201"),
+    ] {
+        let mut bad = input.clone();
+        bad["queryUrl"] = json!(url);
+        assert!(normalize(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+}
+
+#[test]
+fn empty_keyset_page_must_be_terminal_and_cannot_invent_cursor_progress() {
+    let mut input = public_batch(0);
+    input["queryUrl"] = json!(gev_us_groundwater::texas_sdr::public_job_query_url(10, 2).unwrap());
+    input["pagination"] = json!({"afterObjectId":10,"objectIds":[]});
+    assert!(normalize(&serde_json::to_vec(&input).unwrap()).is_err());
+    input["response"]["exceededTransferLimit"] = json!(false);
+    assert_eq!(run(&input)["payload"]["accounting"]["acceptedRecords"], 0);
+    assert_eq!(run(&input)["payload"]["coverage"]["complete"], false);
+}
+
+#[test]
 fn cli_reads_fixture_without_network_and_rejects_bad_mode() {
     use std::io::Write;
     use std::process::{Command, Stdio};

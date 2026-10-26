@@ -30,6 +30,8 @@ python -B examples/texas_sdr_offline.py
 The USGS fixture example proves six IDs, identical replay, tamper rejection and
 last-good retention. The synthetic SDR example proves four retained records,
 three map-eligible with unverified accuracy, one nonspatial, and repeatable hashes.
+That example also runs two invented SDR pages through the existing well-jobs
+command, proving resume, cross-page deduplication and completed local replay.
 Output belongs under ignored temporary/build directories. The release inventory
 includes the reviewed SDR source additions and invented fixture only; real public
 records and diagnostics remain outside the release. The wrapper verifies current

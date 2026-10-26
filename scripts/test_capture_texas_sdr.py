@@ -24,7 +24,7 @@ def schema():
     return dict(fields=[dict(name=k, type=v, domain=None) for k, v in module.TYPES.items()]
                 + [dict(name='ObjectId', type='esriFieldTypeOID', nullable=False)], objectIdField='ObjectId',
         sourceSpatialReference=dict(wkid=4326), dateFieldsTimeReference=dict(timeZone='UTC'),
-        advancedQueryCapabilities=dict(supportsOrderBy=True, supportsPagination=True), maxRecordCount=2000)
+        advancedQueryCapabilities=dict(supportsOrderBy=True, supportsPagination=True, supportsSqlExpression=True), maxRecordCount=2000)
 
 
 def page(rows=2):
@@ -359,6 +359,57 @@ class CaptureTests(unittest.TestCase):
             self.assertIsNone(record['completedAt'])
             self.assertEqual(record['provenance']['unrequestedFields'], ['DateOfWellCompletion'])
             self.assertEqual(record['provenance']['fieldLimitationsEvidenceSha256'], 'c' * 64)
+
+    def test_keyset_page_retains_verified_ordered_oid_metadata_and_bounds(self):
+        source = batch_page(2)
+        for row, oid in zip(source['features'], (11, 15)):
+            row['attributes']['ObjectId'] = oid
+        evidence, capture, urls = self.run_capture([schema(), source],
+            date_omission_evidence_sha256='c'*64, after_object_id=10, record_limit=2, max_seconds=10)
+        self.assertEqual(capture['pagination'], dict(afterObjectId=10, objectIds=[11,15]))
+        self.assertEqual(evidence['limits']['seconds'], 10)
+        self.assertEqual(evidence['page']['lastObjectId'], 15)
+        self.assertEqual(evidence['page']['orderingVerification'], 'strictly-increasing-returned-objectids')
+        self.assertFalse(evidence['page']['complete'])
+        self.assertEqual(evidence['discardedAutomaticObjectIds'], 2)
+        params=urllib.parse.parse_qs(urllib.parse.urlsplit(urls[-1]).query)
+        self.assertEqual(params['where'], ['ObjectId>10'])
+        self.assertEqual(params['resultRecordCount'], ['2'])
+        self.assertIn('ObjectId', params['outFields'][0].split(','))
+        self.assertNotIn('resultOffset', params)
+        self.assertTrue(all('ObjectId' not in r['attributes'] for r in capture['response']['features']))
+        binary=SCRIPT.parents[1]/'crates/us-groundwater/target/debug'/('gev-us-groundwater.exe' if sys.platform=='win32' else 'gev-us-groundwater')
+        if binary.is_file():
+            result=json.loads(subprocess.check_output([str(binary),'--texas-sdr-v1'],input=module.encoded(capture)))
+            self.assertEqual(result['payload']['pagination'],capture['pagination'])
+
+    def test_keyset_refuses_missing_reversed_repeated_or_noninteger_oids_without_retry(self):
+        for ids in ((None,12),(12,11),(11,11),(10,12),(True,12),(11,2147483648)):
+            source=batch_page(2)
+            for row,oid in zip(source['features'],ids):
+                row['attributes']['ObjectId']=oid
+            opener=Opener([schema(),source])
+            with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
+                with self.assertRaises(module.GuardFailure):
+                    module.capture(Path(directory)/'page',opener=opener,pause=lambda _:None,
+                        date_omission_evidence_sha256='c'*64,after_object_id=10,record_limit=2)
+            self.assertEqual(len(opener.urls),2)
+        with self.assertRaises(module.GuardFailure):
+            self.run_capture([schema(),batch_page(0)],date_omission_evidence_sha256='c'*64,after_object_id=0)
+        for after in (-1,2147483648,True,'0'):
+            with self.assertRaises(module.GuardFailure):
+                module.query_url('job-page',2,after_object_id=after)
+
+    def test_keyset_worker_uses_persisted_cursor_limit_and_remaining_deadline(self):
+        source=batch_page(1)
+        source['features'][0]['attributes']['ObjectId']=8
+        with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
+            with mock.patch.object(module,'request_worker',side_effect=[module.encoded(schema()),module.encoded(source)]) as worker:
+                module.capture(Path(directory)/'page',pause=lambda _:None,date_omission_evidence_sha256='c'*64,
+                    after_object_id=7,record_limit=1,max_seconds=9)
+            command=worker.call_args_list[-1].args[0]
+            self.assertEqual(command[-6:],['--_http-phase','job-page','--after-object-id','7','--_record-limit','1'])
+            self.assertTrue(all(0<call.args[1]<=9 for call in worker.call_args_list))
 
     def test_total_deadline_cancels_connect_and_slow_trickle_worker(self):
         # No HTTP: the fake child either stalls before headers (connect-like)

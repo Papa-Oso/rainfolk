@@ -40,7 +40,33 @@ pub fn public_batch_query_url() -> String {
     )
 }
 
-/// Admit only the fixed first-page requests or a one-row whitelist projection.
+/// Keyset page on the source's non-null OID. OIDs are paging metadata, not well IDs.
+pub fn public_job_query_url(after: u64, limit: usize) -> Result<String, String> {
+    if after > i32::MAX as u64 || !(1..=MAX_ROWS).contains(&limit) {
+        return Err("invalid SDR keyset bounds".into());
+    }
+    let mut fields: Vec<_> = FIELDS
+        .iter()
+        .copied()
+        .filter(|f| *f != "DateOfWellCompletion")
+        .collect();
+    fields.push("ObjectId");
+    Ok(format!(
+        "{SOURCE}/query?f=pjson&where=ObjectId%3E{after}&outFields={}&returnGeometry=false&orderByFields=ObjectId%20ASC&resultRecordCount={limit}",
+        fields.join("%2C")
+    ))
+}
+
+pub fn job_projection(url: &str) -> Option<(u64, usize)> {
+    let tail = url.strip_prefix(&format!("{SOURCE}/query?f=pjson&where=ObjectId%3E"))?;
+    let (after, _) = tail.split_once("&outFields=")?;
+    let after = after.parse::<u64>().ok()?;
+    let (_, limit) = tail.rsplit_once("&resultRecordCount=")?;
+    let limit = limit.parse::<usize>().ok()?;
+    (public_job_query_url(after, limit).ok()? == url).then_some((after, limit))
+}
+
+/// Admit only fixed first pages, strict keyset pages or a one-row projection.
 fn public_projection(url: &str) -> Option<(Vec<&'static str>, usize)> {
     if url == public_query_url() {
         return Some((FIELDS.to_vec(), MAX_ROWS));
@@ -53,6 +79,16 @@ fn public_projection(url: &str) -> Option<(Vec<&'static str>, usize)> {
                 .filter(|field| *field != "DateOfWellCompletion")
                 .collect(),
             MAX_ROWS,
+        ));
+    }
+    if let Some((_, limit)) = job_projection(url) {
+        return Some((
+            FIELDS
+                .iter()
+                .copied()
+                .filter(|f| *f != "DateOfWellCompletion")
+                .collect(),
+            limit,
         ));
     }
     if url.len() > 1024 {
@@ -264,6 +300,7 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
                 "sourceSchemaSha256",
                 "fieldLimitations",
                 "fieldLimitationsEvidenceSha256",
+                "pagination",
             ]
         } else {
             &[
@@ -300,8 +337,9 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     } else {
         None
     };
+    let job = input["queryUrl"].as_str().and_then(job_projection);
     if public
-        && input["queryUrl"] == public_batch_query_url()
+        && (input["queryUrl"] == public_batch_query_url() || job.is_some())
         && input["fieldLimitations"] != json!({"DateOfWellCompletion":"source-query-api-400"})
     {
         return Err("SDR batch requires date-omission limitation provenance".into());
@@ -369,6 +407,28 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
         .is_some_and(|(_, limit)| rows.len() > *limit)
     {
         return Err("SDR capture exceeds declared query row limit".into());
+    }
+    if let Some((after, _)) = job {
+        only_keys(&input["pagination"], &["afterObjectId", "objectIds"])?;
+        let ids = input["pagination"]["objectIds"]
+            .as_array()
+            .ok_or("SDR paging OIDs required")?;
+        if input["pagination"]["afterObjectId"].as_u64() != Some(after) || ids.len() != rows.len() {
+            return Err("SDR paging provenance mismatch".into());
+        }
+        let mut previous = after;
+        for id in ids {
+            let id = id
+                .as_u64()
+                .filter(|n| *n > previous && *n <= i32::MAX as u64)
+                .ok_or("SDR paging OIDs not strictly increasing")?;
+            previous = id;
+        }
+        if ids.is_empty() && response["exceededTransferLimit"] == true {
+            return Err("SDR paging made no progress".into());
+        }
+    } else if input.get("pagination").is_some() {
+        return Err("SDR pagination requires exact keyset query".into());
     }
     // Projection is enforced before any row normalization, including rejected rows.
     for row in rows {
@@ -451,7 +511,7 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     }
     quarantine.sort_by_key(|q| q["rowIndex"].as_u64().unwrap());
     let mapped = records.iter().filter(|r| r["mapEligible"] == true).count();
-    let payload = json!({"schemaVersion":1,"kind":"rainfolk-texas-sdr-construction-records",
+    let mut payload = json!({"schemaVersion":1,"kind":"rainfolk-texas-sdr-construction-records",
         "synthetic":!public,"records":records,"quarantine":quarantine,
         "coverage":{"complete":false,"stateCode":"48","observations":"not-requested",
             "exceededTransferLimit":response["exceededTransferLimit"],
@@ -459,6 +519,9 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
         "accounting":{"inputRows":rows.len(),"acceptedRecords":records.len(),
             "identicalDuplicateRows":duplicates,"quarantinedRows":quarantine.len(),
             "mapEligibleRecords":mapped,"nonmappedRecords":records.len()-mapped}});
+    if job.is_some() {
+        payload["pagination"] = input["pagination"].clone();
+    }
     let manifest = json!({"schemaVersion":1,"kind":"rainfolk-texas-sdr-manifest",
         "artifactEncoding":"serde-json-compact-sorted-keys-v1",
         "input":{"bytes":bytes.len(),"sha256":input_hash},
