@@ -309,13 +309,13 @@
     },
     {
       "path": "crates/us-groundwater/src/texas_sdr.rs",
-      "bytes": 18842,
-      "sha256": "15ca4348e5179e046f45512ece51d6146bbe513bb66d5f240240587f8bde737e"
+      "bytes": 19846,
+      "sha256": "22d06b1fc9fbca30ca963eb7c9722ebcb7c26c1a389ad6c0028d18cfcf6f54e9"
     },
     {
       "path": "crates/us-groundwater/tests/texas_sdr.rs",
-      "bytes": 22895,
-      "sha256": "e2f0df23eda07cc4b9f81691f42aeab3e6f6a5c0f8fb34d0939f833467d836b6"
+      "bytes": 27819,
+      "sha256": "0e819f9e282918c88ea74c701ce17bc4f3660a0b2b6a2faffa2dd4a9c1d2e499"
     },
     {
       "path": "docs/ARTIFACT_CONTRACT.md",
@@ -339,8 +339,8 @@
     },
     {
       "path": "docs/TEXAS_SDR.md",
-      "bytes": 21100,
-      "sha256": "66ed3c47f24c1d0aee67abac124a7515f6d3a0518efae552dc4d28c062c71628"
+      "bytes": 23039,
+      "sha256": "cee7da1e0f9fdd04d4231703292da5e2a99b6efabdcea3bca77019c8919d21e7"
     },
     {
       "path": "docs/dependencies.json",
@@ -474,8 +474,8 @@
     },
     {
       "path": "scripts/capture-texas-sdr.py",
-      "bytes": 24223,
-      "sha256": "fc355ea25a8abb81d64fb5d727587fb4291f8223a3c55c358e683b424bff45eb"
+      "bytes": 27895,
+      "sha256": "de92700b0f06b8ca93fdb096f28dd9f1580c68471bc56e2865f2ed343227921c"
     },
     {
       "path": "scripts/capture-usgs-inventory.py",
@@ -494,8 +494,8 @@
     },
     {
       "path": "scripts/test_capture_texas_sdr.py",
-      "bytes": 15603,
-      "sha256": "85922c15f7d3b4e52a4aa140271396637631719b9d14da0ff9d86bb2fb18ee76"
+      "bytes": 22593,
+      "sha256": "e5a86713b2affdc11b17ede6fe25d5d91a26703b96449dcc73ea139d72d7c17a"
     },
     {
       "path": "scripts/test_capture_usgs_inventory.py",

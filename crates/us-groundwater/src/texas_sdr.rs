@@ -27,10 +27,33 @@ pub fn public_query_url() -> String {
     )
 }
 
-/// Admit only the original pilot or a fixed one-row whitelist projection.
+/// Fixed first page omitting the date field that failed in the retained public pilot.
+pub fn public_batch_query_url() -> String {
+    let fields: Vec<_> = FIELDS
+        .iter()
+        .copied()
+        .filter(|field| *field != "DateOfWellCompletion")
+        .collect();
+    format!(
+        "{SOURCE}/query?f=pjson&where=1%3D1&outFields={}&returnGeometry=false&orderByFields=ObjectId%20ASC&resultRecordCount=200&resultOffset=0",
+        fields.join("%2C")
+    )
+}
+
+/// Admit only the fixed first-page requests or a one-row whitelist projection.
 fn public_projection(url: &str) -> Option<(Vec<&'static str>, usize)> {
     if url == public_query_url() {
         return Some((FIELDS.to_vec(), MAX_ROWS));
+    }
+    if url == public_batch_query_url() {
+        return Some((
+            FIELDS
+                .iter()
+                .copied()
+                .filter(|field| *field != "DateOfWellCompletion")
+                .collect(),
+            MAX_ROWS,
+        ));
     }
     if url.len() > 1024 {
         return None;
@@ -277,6 +300,12 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     } else {
         None
     };
+    if public
+        && input["queryUrl"] == public_batch_query_url()
+        && input["fieldLimitations"] != json!({"DateOfWellCompletion":"source-query-api-400"})
+    {
+        return Err("SDR batch requires date-omission limitation provenance".into());
+    }
     if let Some(limitations) = input.get("fieldLimitations") {
         only_keys(limitations, &FIELDS)?;
         let (selected, _) = projection

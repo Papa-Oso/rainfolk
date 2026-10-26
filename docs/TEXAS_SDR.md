@@ -183,6 +183,37 @@ checks input, record, payload and manifest hashes. Candidate manifest SHA-256:
 
 ## Capture and record contract
 
+### Local date-omitted first-page mode
+
+The existing transport has an explicit six-field mode selected by
+`--date-omission-evidence-sha256 <64-hex-digits>`. Without `--public-sample` it
+prints a zero-request plan. The hash cites retained date-query failure evidence;
+it is an operator assertion, not a remote authenticity attestation. The original
+seven-field mode remains unchanged.
+
+The exact new query is pjson, where=1=1, the six approved fields in their existing
+order with DateOfWellCompletion omitted, returnGeometry=false,
+orderByFields=ObjectId ASC, resultRecordCount=200 and resultOffset=0. The source
+schema must declare non-null ObjectId/esriFieldTypeOID, order-by and pagination
+support. Returned automatic OIDs remain transport metadata and are stripped.
+Source ordering is requested, not independently verified from stripped OIDs;
+normalized records sort deterministically by source-qualified report ID.
+
+The capture must carry DateOfWellCompletion=source-query-api-400 and the evidence
+hash. Rust requires these for this exact batch URL and rejects query drift,
+extra rows or undeclared response fields, including an unexpected date null.
+Completion dates remain unknown; raw LocationError and nonspatial retention are
+unchanged. The page receipt records offset, requested/returned rows, ordering and
+transfer-limit status. Complete remains false even for a short/empty page, and
+automatic continuation is false. This is not a multi-page SDR checkpoint adapter.
+
+Limits remain two sequential requests (schema then one page), 200 returned rows,
+512 KiB per accepted response, 1 MiB total response bytes and capture input,
+60 seconds total, 15 seconds socket inactivity, one-second pacing, zero retries
+or redirects. No live request accompanies this local update. Zero-request plan:
+
+    python -B scripts/capture-texas-sdr.py --date-omission-evidence-sha256 2e78430294ebed2590ba939a5ed958a77ca059e67266a0f6bc34bf793a6ddf4b
+
 CLI: gev-us-groundwater --texas-sdr-v1, JSON stdin/stdout. Library:
 texas_sdr::normalize. Cap 1 MiB, one response, 200 rows. Adapter accesses no
 network, file, credential or environment.
@@ -272,8 +303,8 @@ map-eligible, one nonspatial, zero quarantines. Separate malformed/duplicate-ID
 tests prove quarantine. Public mode/transport use synthetic or fake responses
 in tests; real records are never relabeled synthetic or committed.
 
-Verified locally: 84 Rust tests (14 core, 46 queue/segment, 6 index, 18 SDR),
-42 Python tests (24 USGS, 18 SDR), locked offline build, formatting and both
+Verified locally: 87 Rust tests (14 core, 46 queue/segment, 6 index, 21 SDR),
+47 Python tests (24 USGS, 23 SDR), locked offline build, formatting and both
 examples passed. Windows index atomic-replacement checks used scoped execution
 approval; no production file-writing/security behavior was changed. The USGS
 example retains six IDs, identical replay, tamper rejection and last-good output;
