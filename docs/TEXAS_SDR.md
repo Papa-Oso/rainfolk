@@ -7,10 +7,12 @@ contains AGENTS.md and the engineering/rights/contracts documented there; it has
 no `.agents/skills` directory or nested AGENTS.md. This task owns the SDR module,
 its tests/fixtures/example, this document, the library/CLI wiring and the
 README/DATA_SOURCES pointers only.
+The review corrections also own the direct Serde declaration in Cargo.toml and
+the crate's dependency reference in Cargo.lock; no registry package is added.
 
 This is a bounded, synthetic-only source adapter in the existing Rust producer
 crate. It reuses the existing SHA-256, compact encoding, artifact descriptor and
-timestamp validation helpers. It adds no queue, transport, service, dependency,
+timestamp validation helpers. It adds no queue, transport, service, registry package,
 credential requirement or AI call. Existing USGS collection, indexing and corpus
 paths are unchanged. The 1,042,777-record national inventory is not opened or
 rewritten. Construction reports describe submitted drilling/construction events,
@@ -62,7 +64,11 @@ not change `synthetic` to label real records as synthetic.
 CLI: `gev-us-groundwater --texas-sdr-v1`, JSON stdin/stdout; the library entry is
 `texas_sdr::normalize(&[u8])`. Input cap: 1 MiB including envelope; at most 200
 rows, one response. CLI reads at most cap + 1 bytes. No path/network/environment
-access occurs in the adapter. Unknown keys refuse the whole capture, including
+access occurs in the adapter. Duplicate object members anywhere in the capture
+refuse the whole input before Value maps can erase evidence, including identical
+duplicates and escaped equivalent keys. A small visitor uses the existing Serde
+JSON parser's syntax and recursion limits; errors omit keys and values. Unknown
+keys refuse the whole capture, including
 on rows that would otherwise be quarantined. Error messages never echo source
 values or unknown field names.
 
@@ -84,7 +90,7 @@ normalize to null. Report ID and valid coordinates are necessary for admission.
 | ProposedUse | Null or bounded text (50 UTF-8 bytes, no control characters); trim outer whitespace; preserve source wording. No category or public/private inference. |
 | LatitudeDD / LongitudeDD | Native finite JSON numbers; both required; broad Texas guardrail latitude 25..37, longitude -107..-93. This is not a Texas boundary polygon or location verification. No swapping, geocoding or fabricated zero. |
 | DateOfWellCompletion | Null or integer ArcGIS Unix milliseconds in Gregorian years 1..9999. Preserve as `{unixMilliseconds, timeZone: "UTC", precision: "source-timestamp"}`; never treat completion as a water observation or invent a local/date-only interpretation. ISO/CSV strings require a separate reviewed mapping. |
-| BoreholeDepthFt | Null or finite native number >= 0, preserving zero; output `{value, unit: "ft"}`. No metric conversion, inferred depth, yield or water level. |
+| BoreholeDepthFt | Null or finite native number >= 0, preserving zero; normalize IEEE signed zero to positive zero before comparison/hashing; output `{value, unit: "ft"}`. No metric conversion, inferred depth, yield or water level. |
 | LocationError | Null or native signed 16-bit integer. Preserve null/zero; all nonzero values quarantine pending interpretation. Accuracy is always `unknown`, including zero. This is a conservative local guardrail, not a claim about a documented code domain. |
 
 Owner/contact/address fields and all unreviewed source fields are excluded by
@@ -159,7 +165,10 @@ Verified locally on 2026-10-26 with existing Rust/Cargo 1.99.1, cached locked
 packages, installed MSVC tools and Python 3.13:
 
 - Locked offline binary build and formatting check: passed.
-- Rust suite: 79 passed (14 core, 46 queue/segment, 6 index, 13 SDR); zero failed.
+- Rust suite after review fixes: 81 passed (14 core, 46 queue/segment, 6 index,
+  15 SDR); zero failed. The two added regressions prove reversed signed-zero
+  duplicate stability and reject duplicate JSON members at nested/container,
+  synthetic-marker and depth locations, including escaped equivalent keys.
   The first sandbox run hit Windows Access denied in the six unchanged index
   tests during atomic replacement. Scoped execution approval resolved those
   tests without changing production file-writing behavior or security settings.
@@ -171,8 +180,11 @@ packages, installed MSVC tools and Python 3.13:
   independently verified input/record/payload/manifest hashes. Payload SHA-256
   `1274cc8fa0f54c14367c72747f993a8d3eb4a89e36b5e18e26c3255ded89d70d`.
 - `git diff --check`: passed. Existing USGS fixtures, source provenance, release
-  manifest, queue/index implementations, Cargo dependency manifest and lock are
-  unchanged. No national corpus is included in the checkout or used for tests.
+  manifest and queue/index implementations are unchanged. The crate now declares
+  already-locked `serde = "=1.0.229"` directly for the member visitor; the lockfile
+  changes only the crate's dependency reference, with no registry version,
+  checksum or package-set changes. No national corpus is included in the checkout
+  or used for tests.
 - Development-tree workflow checker: fails as expected with
   `Unexpected or missing tracked/workflow files`; producer release-inventory
   reconciliation is pending. No combined release/CI certification is claimed.

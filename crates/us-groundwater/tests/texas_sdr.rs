@@ -196,6 +196,86 @@ fn identical_reports_deduplicate_only_by_source_id() {
 }
 
 #[test]
+fn signed_zero_depth_is_canonical_before_duplicate_comparison_and_hashing() {
+    let mut input = one();
+    let template = input["response"]["features"][0].clone();
+    let rows = [json!(-0.0), json!(0.0), json!(0)].map(|depth| {
+        let mut row = template.clone();
+        row["attributes"]["BoreholeDepthFt"] = depth;
+        row
+    });
+    input["response"]["features"] = json!(rows);
+    let first = run(&input);
+    input["response"]["features"]
+        .as_array_mut()
+        .unwrap()
+        .reverse();
+    let reversed = run(&input);
+    let first_record = &first["payload"]["records"][0];
+    let reversed_record = &reversed["payload"]["records"][0];
+    assert_eq!(
+        first["payload"]["accounting"],
+        json!({"inputRows":3,"acceptedRecords":1,
+        "identicalDuplicateRows":2,"quarantinedRows":0})
+    );
+    assert_eq!(
+        serde_json::to_string(&first_record["boreholeDepth"]).unwrap(),
+        "{\"unit\":\"ft\",\"value\":0.0}"
+    );
+    assert_eq!(
+        first_record["boreholeDepth"],
+        reversed_record["boreholeDepth"]
+    );
+    assert_eq!(
+        first_record["contentSha256"],
+        reversed_record["contentSha256"]
+    );
+    // Source byte/provenance hashes should still distinguish reordered captures.
+    assert_ne!(
+        first["manifest"]["input"]["sha256"],
+        reversed["manifest"]["input"]["sha256"]
+    );
+}
+
+#[test]
+fn duplicate_json_members_are_rejected_before_projection_or_normalization() {
+    let input = serde_json::to_string(&one()).unwrap();
+    let response = serde_json::to_string(&one()["response"]).unwrap();
+    let attributes =
+        serde_json::to_string(&one()["response"]["features"][0]["attributes"]).unwrap();
+    let features = serde_json::to_string(&one()["response"]["features"]).unwrap();
+    let cases = [
+        input.replace("\"BoreholeDepthFt\":125.5", "\"BoreholeDepthFt\":100,\"BoreholeDepthFt\":125.5"),
+        input.replace("\"BoreholeDepthFt\":125.5", "\"BoreholeDepthFt\":125.5,\"BoreholeDepthFt\":125.5"),
+        input.replace("\"synthetic\":true", "\"synthetic\":false,\"synthetic\":true"),
+        input.replace("\"synthetic\":true", "\"synthetic\":true,\"synthetic\":false"),
+        input.replace("\"synthetic\":true", r#""synthetic":false,"\u0073ynthetic":true"#),
+        input.replace(&format!("\"response\":{response}"),
+            &format!("\"response\":{{\"private\":\"PRIVATE-SENTINEL\"}},\"response\":{response}")),
+        input.replace(&format!("\"attributes\":{attributes}"),
+            &format!("\"attributes\":{{\"WellOwner\":\"PRIVATE-SENTINEL\"}},\"attributes\":{attributes}")),
+        input.replace(&format!("\"features\":{features}"),
+            &format!("\"features\":[{{\"attributes\":{{\"WellOwner\":\"PRIVATE-SENTINEL\"}}}}],\"features\":{features}")),
+        input.replace("\"wkid\":4326", "\"wkid\":3857,\"wkid\":4326"),
+        // Also inspect unknown nested objects, rather than skipping their values.
+        input.replacen('{', "{\"unknown\":[{\"hidden\":1,\"hidden\":2}],", 1),
+    ];
+    for invalid in cases {
+        assert_ne!(
+            invalid, input,
+            "regression setup did not insert duplicate members"
+        );
+        let error = normalize(invalid.as_bytes()).unwrap_err();
+        assert_eq!(error, "invalid SDR JSON or duplicate member");
+        assert!(!error.contains("PRIVATE-SENTINEL"));
+    }
+    // JSON strings are values, not JSON member syntax.
+    let mut valid = one();
+    valid["response"]["features"][0]["attributes"]["ProposedUse"] = json!(r#"{"x":1,"x":2}"#);
+    assert!(normalize(&serde_json::to_vec(&valid).unwrap()).is_ok());
+}
+
+#[test]
 fn conflicting_report_versions_have_no_arrival_order_winner() {
     let mut input = one();
     let mut changed = input["response"]["features"][0].clone();

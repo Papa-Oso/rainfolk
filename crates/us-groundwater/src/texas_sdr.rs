@@ -1,6 +1,7 @@
 //! Offline, synthetic-only Texas SDR construction reports. No transport or index activation.
 //! Reuses the producer's compact JSON encoding, SHA-256 and artifact descriptors.
 use super::{artifact, encoded, sha256, time_precision};
+use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,6 +18,60 @@ pub const FIELDS: [&str; 7] = [
     "BoreholeDepthFt",
     "LocationError",
 ];
+
+// Use the already-locked Serde JSON deserializer to inspect every member before
+// Value's map representation could erase duplicate keys. This bounded preflight
+// retains no values and uses the parser's existing syntax/recursion limits.
+struct UniqueMembers;
+
+impl<'de> Deserialize<'de> for UniqueMembers {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(UniqueMembers)
+    }
+}
+
+impl<'de> Visitor<'de> for UniqueMembers {
+    type Value = Self;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("JSON with unique object members")
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self, E> {
+        Ok(self)
+    }
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self, E> {
+        Ok(self)
+    }
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self, E> {
+        Ok(self)
+    }
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self, E> {
+        Ok(self)
+    }
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Self, E> {
+        Ok(self)
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self, E> {
+        Ok(self)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut array: A) -> Result<Self, A::Error> {
+        while array.next_element::<UniqueMembers>()?.is_some() {}
+        Ok(self)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut object: A) -> Result<Self, A::Error> {
+        let mut keys = BTreeSet::new();
+        while let Some(key) = object.next_key::<String>()? {
+            if !keys.insert(key) {
+                return Err(serde::de::Error::custom("duplicate JSON member"));
+            }
+            object.next_value::<UniqueMembers>()?;
+        }
+        Ok(self)
+    }
+}
 
 fn only_keys(value: &Value, allowed: &[&str]) -> Result<(), String> {
     let object = value.as_object().ok_or("expected object")?;
@@ -39,7 +94,9 @@ fn number(value: &Value) -> Result<Option<f64>, &'static str> {
     value
         .as_f64()
         .filter(|n| n.is_finite())
-        .map(Some)
+        // IEEE signed zero compares equal but serializes differently. Canonicalize
+        // before duplicate reconciliation and hashes so arrival order cannot win.
+        .map(|n| Some(if n == 0.0 { 0.0 } else { n }))
         .ok_or("invalid-number")
 }
 
@@ -120,6 +177,8 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
         return Err("SDR input byte limit".into());
     }
     // Do not include serde's source excerpts (which may contain unexpected private data).
+    serde_json::from_slice::<UniqueMembers>(bytes)
+        .map_err(|_| "invalid SDR JSON or duplicate member")?;
     let input: Value = serde_json::from_slice(bytes).map_err(|_| "invalid SDR JSON")?;
     only_keys(
         &input,

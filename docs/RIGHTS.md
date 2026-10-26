@@ -13,7 +13,9 @@ his notice from adapted source. The staged producer was developed in that
 checkout; its exact imported source hashes are in `source-files.json`.
 
 Cargo.lock pins official crates.io packages with checksums. Direct dependencies
-are sha2 0.10.9 and serde_json 1.0.145. Their transitive licenses and notices must
+are sha2 0.10.9, serde_json 1.0.145 and serde 1.0.229. The SDR member-validation
+visitor reuses the already-locked Serde package; no registry package/version is
+added by that direct declaration. Their transitive licenses and notices must
 also be reviewed before publication; the lockfile is not a license grant. The
 cached manifests' declared licenses are recorded in `dependencies.json`.
 Forty-three existing top-level license/notice files from all 21 locked third-party
