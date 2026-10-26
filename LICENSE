@@ -19,7 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-Scope: Rainfolk's newly authored code and documentation. Third-party code and
-source data retain their separate terms; see LICENSES/, docs/RIGHTS.md and
-DATA_SOURCES.md. This license does not relicense source datasets.

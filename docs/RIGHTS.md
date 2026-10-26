@@ -24,3 +24,9 @@ inventory, not final legal clearance. Public author/contact details in those leg
 notices are deliberately retained, unlike private research/contact data. Python
 transport uses only the standard library. Source datasets have separate rights
 documented in DATA_SOURCES.md. No additional dependencies were installed.
+
+## License scope
+
+Scope: Rainfolk's newly authored code and documentation. Third-party code and
+source data retain their separate terms; see LICENSES/, docs/RIGHTS.md and
+DATA_SOURCES.md. This license does not relicense source datasets.

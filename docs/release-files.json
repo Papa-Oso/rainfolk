@@ -24,8 +24,8 @@
     },
     {
       "path": "LICENSE",
-      "bytes": 1291,
-      "sha256": "127b7c53a5cea00480a74887e89c32db44f22cbf328b05aa1d89a6b9fae93bfe"
+      "bytes": 1071,
+      "sha256": "42ea3f4daae6eaf56cfe5d72a117359ccb24ff36794feecb4b9a46458971059c"
     },
     {
       "path": "LICENSES/GEV-MIT.txt",
@@ -324,8 +324,8 @@
     },
     {
       "path": "docs/RIGHTS.md",
-      "bytes": 1765,
-      "sha256": "6a9ccc5936f2b478b60d942695a0feaba203903272d67e2a0d25bd76581c4634"
+      "bytes": 2003,
+      "sha256": "a72d62dcc07ce42e3be691fb3fc4df2076785801768f0f53fff80e184b60e09d"
     },
     {
       "path": "docs/dependencies.json",
