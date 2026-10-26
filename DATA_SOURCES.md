@@ -27,8 +27,10 @@ is supported.
 `fixtures/texas-sdr/synthetic-v1.json` contains invented construction-report rows
 only, with no downloaded SDR records. The Rust adapter distinguishes synthetic
 and explicit public captures and does not activate the USGS index. The authorized
-public pilot's metadata reads succeeded; the authorized diagnostic page request
-returned a generic ArcGIS 400 query-operation error. No live records were retained.
+public pilot's metadata and count-only reads succeeded. An ID-only probe returned
+one row that was not retained after local validation failed; seven-field probes
+returned generic ArcGIS 400 errors. This is not a general service outage or a
+reported access denial. No live records were retained.
 The minimum-field pilot does not fetch
 owner/contact/address values; this is not a blanket policy against useful public
 organization/professional/site metadata. See [the SDR source contract](docs/TEXAS_SDR.md)

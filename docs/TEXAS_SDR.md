@@ -61,8 +61,9 @@ HTTP 200 carrying ArcGIS error 400: "Unable to complete operation." with detail
 "Unable to perform query operation." This is a query-operation failure, not a
 reported authentication/access denial or rate limit. The service provides no
 more specific root cause. Exact field names, Query capability, ordering and
-pagination flags match the official Esri query contract; no parameter mismatch
-was established, so no speculative query changes or further requests were made.
+pagination flags match the official Esri query contract. No parameter mismatch
+was established in that repeat; the separately authorized isolation below then
+tested simpler documented combinations.
 
 Across both capture attempts: four transport requests (two schema, two query),
 one explicitly authorized diagnostic repeat, zero automatic retries, zero live
@@ -85,6 +86,46 @@ minimum-field response, sanitized capture, timestamps, exact request URL, hashes
 budgets, attribution and terms/uncertainty links under an ignored local directory.
 Unrequested attributes refuse retention; an automatic numeric ObjectId may be
 removed from the sanitized capture with explicit accounting.
+
+### Four-request query isolation (completed; no further requests)
+
+Primary reference: [Esri Feature Layer query contract](https://developers.arcgis.com/rest/services-reference/enterprise/query-feature-service-layer/).
+Published examples confirm comma-delimited outFields, count-only output,
+resultRecordCount, pjson and the globalIdFieldName response metadata member.
+All four additional requests used the same official layer query endpoint,
+explicit minimum fields, no owner/contact fields, no alternate host and no auth.
+
+| Additional request | Parameters changed from earlier failure | Result |
+| --- | --- | --- |
+| 1: count | pjson, where=1=1, returnCountOnly=true, returnGeometry=false; no fields/order/offset | HTTP 200, count 713,172 report records; zero feature rows. This is not a physical-well census. |
+| 2: ID-only | pjson, tracking number only, no order/offset, resultRecordCount=1 | HTTP 200, one feature row. Local response-shape validation rejected it; exact guard reason was not retained and the row/body was not saved. |
+| 3: seven-field, one row | Original json format, remove order/offset, resultRecordCount=1 | HTTP 200, same ArcGIS 400 generic query error; zero rows. |
+| 4: seven-field, remaining budget | pjson, no order/offset, resultRecordCount=199 after charging the ID row | HTTP 200, same ArcGIS 400 generic query error; zero rows. |
+
+The service is not generally unavailable: count and ID-only reads work. Ordering,
+offset and JSON-versus-pjson alone do not explain every failure. Expanded field
+projection or its data handling is implicated, but the individual field/backend
+reason is not established; limits/formats also differed between some probes.
+No auth/access denial or 429 was reported in these diagnostics.
+
+A concrete local contract gap was corrected: globalIdFieldName metadata and null
+geometry are allowed while non-null unexpected geometry remains refused. This
+gap is supported by official syntax, but cannot be proven to be the lost ID-probe
+guard reason. The probe handler now records static local guard messages as well
+as safe API codes; unknowns are preserved instead of claiming a diagnosis.
+
+Final accounting across all capture/diagnostic calls: eight transport requests
+(two schema, six query), four additional isolation requests, one cumulative
+feature row returned, zero live records retained/normalized. The original total
+record budget remains 200; the ID row consumed one even though not retained.
+The four-request isolation response bytes total 710; initial attempt bytes remain
+unknown. All four additional requests are spent; no automatic continuation.
+
+Exact parameters/codes/hashes and readable conclusion are retained locally in
+.temp-gev/texas-sdr-query-isolation-20261026/ledger.json and summary.json.
+The original diagnostic audits remain unchanged. No live response records are
+committed. A future bounded technical slice could bisect selected fields at fixed
+format/one-row limit; this task proceeds with offline work rather than looping.
 
 ## Capture and record contract
 
@@ -170,7 +211,7 @@ tests prove quarantine. Public mode/transport use synthetic or fake responses
 in tests; real records are never relabeled synthetic or committed.
 
 Verified locally: 83 Rust tests (14 core, 46 queue/segment, 6 index, 17 SDR),
-38 Python tests (24 USGS, 14 SDR), locked offline build, formatting and both
+40 Python tests (24 USGS, 16 SDR), locked offline build, formatting and both
 examples passed. Windows index atomic-replacement checks used scoped execution
 approval; no production file-writing/security behavior was changed. The USGS
 example retains six IDs, identical replay, tamper rejection and last-good output;
@@ -181,6 +222,10 @@ New offline regressions cover slow-trickle/connect cancellation, default worker
 selection, contradictory/absent response CRS, explicit Rust CRS provenance,
 safe failure logs and HTTP/embedded denial/429 stops. No extra live query was
 used to test the deadline or CRS corrections.
+New query-isolation helpers are tested offline for fixed origin/path, no wildcard,
+minimum projection, explicit row limits and documented metadata/null-geometry
+acceptance. The synthetic example remains four retained records, three map-eligible
+and one nonspatial, with no LocationError code meanings inferred.
 
 The workflow checker pins the previous release inventory and rejects this
 development candidate. Manifest/checker remain unchanged; release-inventory

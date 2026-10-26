@@ -9,6 +9,7 @@ import tempfile
 import time
 import unittest
 import urllib.error
+import urllib.parse
 from unittest import mock
 
 SCRIPT = Path(__file__).with_name('capture-texas-sdr.py')
@@ -128,6 +129,38 @@ class CaptureTests(unittest.TestCase):
         evidence, capture, _ = self.run_capture([schema(), source])
         self.assertEqual(evidence['discardedAutomaticObjectIds'], 1)
         self.assertNotIn('ObjectId', capture['response']['features'][0]['attributes'])
+
+    def test_documented_global_id_metadata_and_null_geometry_are_allowed(self):
+        source = page()
+        source['globalIdFieldName'] = ''
+        source['features'][0]['geometry'] = None
+        _, capture, _ = self.run_capture([schema(), source])
+        self.assertEqual(len(capture['response']['features']), 2)
+        self.assertNotIn('geometry', capture['response']['features'][0])
+
+    def test_diagnostic_query_variants_are_finite_minimum_field_and_bounded(self):
+        for phase in module.PROBE_PHASES:
+            parsed = urllib.parse.urlsplit(module.query_url(phase, 199))
+            self.assertEqual(parsed.scheme, 'https')
+            self.assertEqual(parsed.netloc, 'services.twdb.texas.gov')
+            self.assertEqual(parsed.path, urllib.parse.urlsplit(module.SOURCE).path + '/query')
+            params = urllib.parse.parse_qs(parsed.query)
+            self.assertEqual(params['returnGeometry'], ['false'])
+            self.assertNotIn('orderByFields', params)
+            self.assertNotIn('resultOffset', params)
+            if phase == 'count':
+                self.assertEqual(params['returnCountOnly'], ['true'])
+                self.assertNotIn('outFields', params)
+            else:
+                self.assertLessEqual(int(params['resultRecordCount'][0]), 199)
+                self.assertTrue(set(params['outFields'][0].split(',')).issubset(module.FIELDS))
+        for limit in (0, 201, True, '200'):
+            with self.assertRaises(ValueError):
+                module.query_url('pilot-pretty', limit)
+        with self.assertRaises(ValueError):
+            module.query_url('unapproved')
+        with self.assertRaises(ValueError):
+            module.query_url('query', 1)
 
     def test_duplicate_json_members_and_nonfinite_numbers_refused(self):
         for bad in (b'{"features":[],"features":[]}', b'{"a":NaN}'):

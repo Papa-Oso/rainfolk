@@ -25,6 +25,7 @@ SCHEMA_URL = SOURCE + '?f=pjson'
 PAGE_BYTES = 512 * 1024
 TOTAL_BYTES = 1024 * 1024
 TIME_LIMIT = 60
+PROBE_PHASES = ('count', 'id-one', 'projected-one', 'pilot-pretty')
 TYPES = dict(zip(FIELDS, ('esriFieldTypeString', 'esriFieldTypeString',
     'esriFieldTypeDouble', 'esriFieldTypeDouble', 'esriFieldTypeDate',
     'esriFieldTypeDouble', 'esriFieldTypeSmallInteger')))
@@ -81,6 +82,27 @@ def source_failure(value, phase):
     return SourceFailure(phase, error.get('code'), error.get('message'), error.get('details'))
 
 
+def query_url(phase='query', limit=200):
+    """Fixed diagnostic variants on the same layer query; never arbitrary SQL/fields."""
+    if type(limit) is not int or not 1 <= limit <= 200:
+        raise ValueError('invalid query row budget')
+    if phase == 'schema':
+        return SCHEMA_URL
+    if phase == 'query':
+        if limit != 200:
+            raise ValueError('original query has fixed 200-row limit')
+        return QUERY
+    base = SOURCE + '/query?f=pjson'
+    if phase == 'count':
+        return base + '&where=1%3D1&returnCountOnly=true&returnGeometry=false'
+    if phase == 'id-one':
+        return base + '&where=1%3D1&outFields=WellReportTrackingNumber&returnGeometry=false&resultRecordCount=1'
+    if phase in ('projected-one', 'pilot-pretty'):
+        return (SOURCE + '/query?f=' + ('pjson' if phase == 'pilot-pretty' else 'json') + '&where=1%3D1&outFields=' + '%2C'.join(FIELDS)
+                + '&returnGeometry=false&resultRecordCount=' + str(1 if phase == 'projected-one' else limit))
+    raise ValueError('unapproved query phase')
+
+
 def request_worker(command, remaining):
     """Kill/wait the HTTP child on total deadline, including connect/slow body."""
     try:
@@ -102,9 +124,9 @@ def request_worker(command, remaining):
     return result.stdout
 
 
-def http_worker(phase):
+def http_worker(phase, limit=200):
     # Private CLI mode accepts fixed phase names, never arbitrary URLs/hosts.
-    url = SCHEMA_URL if phase == 'schema' else QUERY
+    url = query_url(phase, limit)
     request = urllib.request.Request(url, headers={
         'Accept': 'application/json', 'User-Agent': 'Rainfolk-bounded-SDR-sample/1',
         'Accept-Encoding': 'identity'})
@@ -178,7 +200,7 @@ def sanitize(response, schema=None):
         raise source_failure(response, 'query')
     if set(response) - {'features', 'fields', 'displayFieldName', 'fieldAliases',
             'exceededTransferLimit', 'spatialReference', 'objectIdFieldName',
-            'uniqueIdField', 'hasZ', 'hasM', 'geometryType'}:
+            'globalIdFieldName', 'uniqueIdField', 'hasZ', 'hasM', 'geometryType'}:
         raise ValueError('unexpected response metadata; no retention')
     if any(not isinstance(f, dict) or f.get('name') not in set(FIELDS) | {'ObjectId'}
            for f in response.get('fields', [])):
@@ -197,7 +219,7 @@ def sanitize(response, schema=None):
         raise ValueError('source row limit or shape invalid')
     cleaned, dropped_oids = [], 0
     for row in rows:
-        if not isinstance(row, dict) or set(row) - {'attributes'}:
+        if not isinstance(row, dict) or set(row) - {'attributes', 'geometry'} or row.get('geometry') is not None:
             raise ValueError('unexpected feature shape; no retention')
         attributes = row.get('attributes')
         # Some ArcGIS servers include an OID automatically. Keep only the seven
@@ -346,12 +368,13 @@ def capture(directory, opener=None, pause=time.sleep, clock=time.monotonic):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--public-sample', action='store_true')
-    parser.add_argument('--_http-phase', choices=('schema', 'query'), help=argparse.SUPPRESS)
+    parser.add_argument('--_http-phase', choices=('schema', 'query', *PROBE_PHASES), help=argparse.SUPPRESS)
+    parser.add_argument('--_record-limit', type=int, default=200, help=argparse.SUPPRESS)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     if args._http_phase:
         try:
-            sys.stdout.buffer.write(http_worker(args._http_phase))
+            sys.stdout.buffer.write(http_worker(args._http_phase, args._record_limit))
         except Exception as error:
             info = error.info if isinstance(error, SourceFailure) else dict(
                 httpError=False, category='transport-failure', message='HTTP worker stopped.')
