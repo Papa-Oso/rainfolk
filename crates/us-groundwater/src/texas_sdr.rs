@@ -27,6 +27,32 @@ pub fn public_query_url() -> String {
     )
 }
 
+/// Admit only the original pilot or a fixed one-row whitelist projection.
+fn public_projection(url: &str) -> Option<(Vec<&'static str>, usize)> {
+    if url == public_query_url() {
+        return Some((FIELDS.to_vec(), MAX_ROWS));
+    }
+    if url.len() > 1024 {
+        return None;
+    }
+    let prefix = format!("{SOURCE}/query?f=pjson&where=1%3D1&outFields=");
+    let fields = url
+        .strip_prefix(&prefix)?
+        .strip_suffix("&returnGeometry=false&resultRecordCount=1")?;
+    let mut selected = Vec::new();
+    for name in fields.split("%2C").take(FIELDS.len() + 1) {
+        let field = FIELDS.iter().find(|field| **field == name)?;
+        if selected.contains(field) || selected.len() == FIELDS.len() {
+            return None;
+        }
+        selected.push(*field);
+    }
+    if selected.first() != Some(&FIELDS[0]) {
+        return None;
+    }
+    Some((selected, 1))
+}
+
 // Use the already-locked Serde JSON deserializer to inspect every member before
 // Value's map representation could erase duplicate keys. This bounded preflight
 // retains no values and uses the parser's existing syntax/recursion limits.
@@ -213,6 +239,8 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
                 "queryUrl",
                 "sourceResponseSha256",
                 "sourceSchemaSha256",
+                "fieldLimitations",
+                "fieldLimitationsEvidenceSha256",
             ]
         } else {
             &[
@@ -232,10 +260,11 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     {
         return Err("SDR requires explicit v1 synthetic/public capture at fixed source".into());
     }
-    if public {
-        if input["queryUrl"] != public_query_url() {
-            return Err("SDR public capture requires exact bounded minimum-field query".into());
-        }
+    let projection = if public {
+        let projection = input["queryUrl"]
+            .as_str()
+            .and_then(public_projection)
+            .ok_or("SDR public capture requires bounded whitelist query")?;
         for field in ["sourceResponseSha256", "sourceSchemaSha256"] {
             if input[field]
                 .as_str()
@@ -244,6 +273,31 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
                 return Err("SDR public capture requires response/schema hashes".into());
             }
         }
+        Some(projection)
+    } else {
+        None
+    };
+    if let Some(limitations) = input.get("fieldLimitations") {
+        only_keys(limitations, &FIELDS)?;
+        let (selected, _) = projection
+            .as_ref()
+            .ok_or("field limitations require public capture")?;
+        if limitations.as_object().unwrap().is_empty()
+            || limitations
+                .as_object()
+                .unwrap()
+                .iter()
+                .any(|(field, reason)| {
+                    selected.contains(&field.as_str()) || reason != "source-query-api-400"
+                })
+            || input["fieldLimitationsEvidenceSha256"]
+                .as_str()
+                .is_none_or(|s| s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()))
+        {
+            return Err("invalid unrequested-field limitation provenance".into());
+        }
+    } else if input.get("fieldLimitationsEvidenceSha256").is_some() {
+        return Err("field limitation evidence requires limitations".into());
     }
     if input["retrievedAt"].as_str().and_then(time_precision) != Some("instant") {
         return Err("SDR retrieval requires zoned timestamp".into());
@@ -281,10 +335,19 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     if rows.len() > MAX_ROWS {
         return Err("SDR row limit (200)".into());
     }
+    if projection
+        .as_ref()
+        .is_some_and(|(_, limit)| rows.len() > *limit)
+    {
+        return Err("SDR capture exceeds declared query row limit".into());
+    }
     // Projection is enforced before any row normalization, including rejected rows.
     for row in rows {
         only_keys(row, &["attributes"])?;
         only_keys(&row["attributes"], &FIELDS)?;
+        if let Some((selected, _)) = &projection {
+            only_keys(&row["attributes"], selected)?;
+        }
     }
     let input_hash = sha256(bytes);
     let mut quarantine = Vec::new();
@@ -339,6 +402,21 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
             }
             normalized["provenance"]["serviceSpatialReferenceBasis"] =
                 response["spatialReferenceBasis"].clone();
+            let (selected, _) = projection.as_ref().unwrap();
+            normalized["provenance"]["requestedFields"] = json!(selected);
+            normalized["provenance"]["unrequestedFields"] = json!(
+                FIELDS
+                    .iter()
+                    .filter(|field| !selected.contains(field))
+                    .collect::<Vec<_>>()
+            );
+            normalized["provenance"]["unrequestedFieldStatus"] =
+                json!("unknown; not requested in bounded source projection");
+            if let Some(limitations) = input.get("fieldLimitations") {
+                normalized["provenance"]["fieldLimitations"] = limitations.clone();
+                normalized["provenance"]["fieldLimitationsEvidenceSha256"] =
+                    input["fieldLimitationsEvidenceSha256"].clone();
+            }
         }
         records.push(normalized);
     }

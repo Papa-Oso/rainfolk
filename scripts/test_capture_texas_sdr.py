@@ -164,8 +164,48 @@ class CaptureTests(unittest.TestCase):
 
     def test_duplicate_json_members_and_nonfinite_numbers_refused(self):
         for bad in (b'{"features":[],"features":[]}', b'{"a":NaN}'):
-            with self.assertRaisesRegex(ValueError, 'invalid source JSON'):
+            with self.assertRaises(module.GuardFailure) as error:
                 module.decode(bad)
+            self.assertIn(error.exception.info['guardCode'], ('duplicate-json-member', 'json-nonfinite'))
+
+    def test_each_local_guard_persists_a_stable_value_free_code(self):
+        cases = []
+        private = page()
+        private['features'][0]['attributes']['WellOwner'] = 'PRIVATE-SENTINEL'
+        cases.append((private, 'attribute-projection'))
+        bad_metadata = page()
+        bad_metadata['unreviewed'] = 'PRIVATE-SENTINEL'
+        cases.append((bad_metadata, 'response-metadata'))
+        bad_fields = page()
+        bad_fields['fields'] = None
+        cases.append((bad_fields, 'response-fields-shape'))
+        for response, code in cases:
+            opener = Opener([schema(), response])
+            with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
+                target = Path(directory) / 'sample'
+                with self.assertRaises(module.GuardFailure):
+                    module.capture(target, opener=opener, pause=lambda _: None)
+                raw = (target / 'failure.json').read_text()
+                saved = json.loads(raw)
+                self.assertEqual(saved['error']['guardCode'], code)
+                self.assertEqual(saved['error']['category'], 'local-validation')
+                self.assertNotIn('PRIVATE-SENTINEL', raw)
+        unknown = module.local_guard_info(ValueError('PRIVATE-SENTINEL'))
+        self.assertEqual(unknown['guardCode'], 'unexpected-local-validation')
+        self.assertNotIn('PRIVATE-SENTINEL', json.dumps(unknown))
+
+    def test_projection_probe_rejects_unknown_fields_duplicates_and_large_limits(self):
+        fields = ('WellReportTrackingNumber', 'LatitudeDD', 'LongitudeDD')
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(module.query_url('projection', 1, fields)).query)
+        self.assertEqual(params['outFields'], [','.join(fields)])
+        self.assertEqual(params['resultRecordCount'], ['1'])
+        for bad in (['WellOwner'], ['WellReportTrackingNumber', 'WellOwner'],
+                    ['WellReportTrackingNumber', 'LatitudeDD', 'LatitudeDD'],
+                    ['WellReportTrackingNumber', {}]):
+            with self.assertRaises(module.GuardFailure):
+                module.query_url('projection', 1, bad)
+        with self.assertRaises(module.GuardFailure):
+            module.query_url('projection', 2, fields)
 
     def test_api_error_retains_only_numeric_code(self):
         for check in (module.sanitize, module.schema_check):

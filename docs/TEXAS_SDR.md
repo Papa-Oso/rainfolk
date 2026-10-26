@@ -114,7 +114,7 @@ gap is supported by official syntax, but cannot be proven to be the lost ID-prob
 guard reason. The probe handler now records static local guard messages as well
 as safe API codes; unknowns are preserved instead of claiming a diagnosis.
 
-Final accounting across all capture/diagnostic calls: eight transport requests
+Accounting at the end of that isolation window: eight transport requests
 (two schema, six query), four additional isolation requests, one cumulative
 feature row returned, zero live records retained/normalized. The original total
 record budget remains 200; the ID row consumed one even though not retained.
@@ -124,8 +124,62 @@ unknown. All four additional requests are spent; no automatic continuation.
 Exact parameters/codes/hashes and readable conclusion are retained locally in
 .temp-gev/texas-sdr-query-isolation-20261026/ledger.json and summary.json.
 The original diagnostic audits remain unchanged. No live response records are
-committed. A future bounded technical slice could bisect selected fields at fixed
-format/one-row limit; this task proceeds with offline work rather than looping.
+committed. The subsequent one-row field bisection below completed the local pilot.
+
+### Field bisection and successful end-to-end pilot
+
+Observability was fixed before further reads: explicit local validation raises
+now carry stable value-free guard codes. Guard codes survive worker/capture
+boundaries, unknown validation failures retain a safe code/origin, and local parser
+errors are logged separately from service API errors. No raw source error message
+or private values are echoed. The earlier ID-only response body did not exist for
+replay; no guard reason was retroactively invented. New successful minimum-field
+responses are retained as bounded JSON replay files before normalization.
+
+The next window allowed at most six additional one-row reads, with the original
+200-record cumulative budget unchanged. Four were used; the remaining two were
+not needed and no further requests are planned:
+
+| One-row request | Service/parser outcome |
+| --- | --- |
+| ID + ProposedUse + LatitudeDD + LongitudeDD | HTTP 200; source/parser success; real record passed Rust. |
+| ID + DateOfWellCompletion + BoreholeDepthFt + LocationError | HTTP 200 carrying API 400; no local parser failure. |
+| ID + DateOfWellCompletion | Same API 400, reproducing the date-field selector failure. |
+| All six approved fields except DateOfWellCompletion | HTTP 200; source/parser/Rust success. |
+
+All used pjson, where=1=1, returnGeometry=false, resultRecordCount=1, no ordering
+or offset and the same official public query endpoint. No owner/contact/full
+report data, alternate hosts or credentials were used. Selecting the date field
+is the concrete trigger for this bounded query; the backend does not disclose
+its deeper reason. This does not establish that every source date is bad.
+
+Final candidate: TWDB-SDR-346, one accepted public construction report, one
+map-eligible unverified location, zero nonmapped/quarantined records. Completion
+date stays null/unknown. Its provenance explicitly records the omitted field,
+source-query-api-400 reason and diagnostic evidence SHA-256. Original LocationError
+is preserved without meaning/accuracy inference. This is no evidence of an active
+well, present ownership, current yield or drinking-water safety.
+
+Current accounting across all windows: 12 transport requests (two schema, ten
+query), three cumulative feature rows returned, two retained capture rows for the
+same report during projection enrichment, and one final candidate record. One
+earlier ID row was not retained; the two new captures remain separately preserved.
+No combined corpus, location-only deduplication or production index update occurred.
+
+Local deliverables under .temp-gev/texas-sdr-field-bisection-20261026/:
+
+- ledger.json and summary.json: exact parameters, source versus guard outcomes,
+  row/request accounting, limitations and independent hash/replay results.
+- pilot-capture.json and pilot-rust-candidate.json: explicit public capture and
+  normalized one-record candidate, both kept out of Git/publication.
+- probe-1-response.json and probe-4-response.json: minimum-field JSON replays;
+  these are JSON re-encodings, not original wire bytes. Original response SHA-256
+  remains operator provenance, not a remote-authenticity attestation.
+
+Offline reproduction: python -B .temp-gev/finish-sdr-pilot.py. It performs no
+network calls, verifies source-response replay, runs Rust twice and independently
+checks input, record, payload and manifest hashes. Candidate manifest SHA-256:
+8f3a43ecf6b72b016eb528ed51c89d3789c824ae393a7368d0945680fa056b96.
 
 ## Capture and record contract
 
@@ -137,6 +191,14 @@ network, file, credential or environment.
 - Real public kind rainfolk-texas-sdr-public-capture, synthetic=false, exact bounded
   queryUrl and sourceResponseSha256/sourceSchemaSha256. Operator assertions are
   not remote authenticity attestations.
+- Public queryUrl may also be a strict one-row pjson whitelist projection:
+  report tracking number first, only approved unique field names, fixed where=1=1,
+  returnGeometry=false and resultRecordCount=1. Rust enforces that row limit and
+  rejects response attributes outside the declared projection. Provenance lists
+  requested/unrequested fields so absence is not misreported as a source null.
+- Optional fieldLimitations maps only unrequested approved fields to the observed
+  source-query-api-400 reason and requires fieldLimitationsEvidenceSha256. These
+  operator limitation assertions are kept in provenance; they never create dates.
 - Both require schemaVersion 1, fixed official layer sourceUrl, zoned retrievedAt,
   response with spatialReference.wkid=4326, explicit exceededTransferLimit Boolean
   and features containing only approved attributes. Service CRS does not verify
@@ -210,8 +272,8 @@ map-eligible, one nonspatial, zero quarantines. Separate malformed/duplicate-ID
 tests prove quarantine. Public mode/transport use synthetic or fake responses
 in tests; real records are never relabeled synthetic or committed.
 
-Verified locally: 83 Rust tests (14 core, 46 queue/segment, 6 index, 17 SDR),
-40 Python tests (24 USGS, 16 SDR), locked offline build, formatting and both
+Verified locally: 84 Rust tests (14 core, 46 queue/segment, 6 index, 18 SDR),
+42 Python tests (24 USGS, 18 SDR), locked offline build, formatting and both
 examples passed. Windows index atomic-replacement checks used scoped execution
 approval; no production file-writing/security behavior was changed. The USGS
 example retains six IDs, identical replay, tamper rejection and last-good output;
@@ -226,6 +288,9 @@ New query-isolation helpers are tested offline for fixed origin/path, no wildcar
 minimum projection, explicit row limits and documented metadata/null-geometry
 acceptance. The synthetic example remains four retained records, three map-eligible
 and one nonspatial, with no LocationError code meanings inferred.
+New checks cover stable value-free guard logging and strict one-row partial
+projections/limitation provenance. The real pilot is also verified separately;
+it is not used as a committed synthetic test fixture.
 
 The workflow checker pins the previous release inventory and rejects this
 development candidate. Manifest/checker remain unchanged; release-inventory

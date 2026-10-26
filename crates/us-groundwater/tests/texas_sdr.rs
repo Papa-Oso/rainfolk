@@ -525,6 +525,75 @@ fn retained_raw_coordinate_versions_cannot_have_an_arrival_order_winner() {
 }
 
 #[test]
+fn one_row_public_projection_keeps_unrequested_fields_unknown_and_scoped() {
+    let mut input = one();
+    input["kind"] = json!("rainfolk-texas-sdr-public-capture");
+    input["synthetic"] = json!(false);
+    let prefix = format!(
+        "{}/query?f=pjson&where=1%3D1&outFields=",
+        gev_us_groundwater::texas_sdr::SOURCE
+    );
+    let suffix = "&returnGeometry=false&resultRecordCount=1";
+    let query = format!(
+        "{prefix}WellReportTrackingNumber%2CProposedUse%2CLatitudeDD%2CLongitudeDD{suffix}"
+    );
+    input["queryUrl"] = json!(query);
+    input["sourceResponseSha256"] = json!("a".repeat(64));
+    input["sourceSchemaSha256"] = json!("b".repeat(64));
+    input["response"]["spatialReferenceBasis"] = json!("source-response; attributes-unverified");
+    for field in ["DateOfWellCompletion", "BoreholeDepthFt", "LocationError"] {
+        input["response"]["features"][0]["attributes"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+    }
+    let output = run(&input);
+    let record = &output["payload"]["records"][0];
+    assert_eq!(output["payload"]["accounting"]["acceptedRecords"], 1);
+    assert!(record["completedAt"].is_null());
+    assert!(record["boreholeDepth"]["value"].is_null());
+    assert!(record["locationError"].is_null());
+    assert_eq!(
+        record["provenance"]["unrequestedFields"],
+        json!(["DateOfWellCompletion", "BoreholeDepthFt", "LocationError"])
+    );
+    let mut explained = input.clone();
+    explained["fieldLimitations"] = json!({"DateOfWellCompletion":"source-query-api-400"});
+    explained["fieldLimitationsEvidenceSha256"] = json!("c".repeat(64));
+    assert_eq!(
+        run(&explained)["payload"]["records"][0]["provenance"]["fieldLimitations"]["DateOfWellCompletion"],
+        "source-query-api-400"
+    );
+    for bad in [
+        json!({"LatitudeDD":"source-query-api-400"}),
+        json!({"DateOfWellCompletion":"unverified-guess"}),
+    ] {
+        explained["fieldLimitations"] = bad;
+        assert!(normalize(&serde_json::to_vec(&explained).unwrap()).is_err());
+    }
+    for bad_url in [
+        query.replace("resultRecordCount=1", "resultRecordCount=2"),
+        query.replace("pjson", "json"),
+        format!("{prefix}WellReportTrackingNumber%2CWellOwner{suffix}"),
+        format!("{prefix}LatitudeDD{suffix}"),
+        format!("{prefix}WellReportTrackingNumber%2CLatitudeDD%2CLatitudeDD{suffix}"),
+    ] {
+        let mut bad = input.clone();
+        bad["queryUrl"] = json!(bad_url);
+        assert!(normalize(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+    let mut too_many = input.clone();
+    let row = too_many["response"]["features"][0].clone();
+    too_many["response"]["features"]
+        .as_array_mut()
+        .unwrap()
+        .push(row);
+    assert!(normalize(&serde_json::to_vec(&too_many).unwrap()).is_err());
+    input["response"]["features"][0]["attributes"]["BoreholeDepthFt"] = json!(125);
+    assert!(normalize(&serde_json::to_vec(&input).unwrap()).is_err());
+}
+
+#[test]
 fn cli_reads_fixture_without_network_and_rejects_bad_mode() {
     use std::io::Write;
     use std::process::{Command, Stdio};
