@@ -1,0 +1,37 @@
+name: Scoped engineering task
+description: A bounded task for a contributor or agent
+title: ""
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome and current evidence
+      description: What should change? Link the starting revision and public-safe evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope, writer and exclusions
+      description: Owned paths, interface dependencies, one active writer, and explicit out-of-scope work.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance evidence
+      description: Exact commands, expected behavior, measurements/screenshots where needed, final commit and fresh review.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Budget and permissions
+      description: Finite time/request/byte/cost limits, existing authorization, and actions requiring a separate approval. Default no live data, secrets, deployment, paid services or upstream writes.
+    validations:
+      required: true
+  - type: textarea
+    id: checkpoint
+    attributes:
+      label: Status and checkpoint
+      description: Backlog / Ready / In Progress / Blocked / Done; next step and exact blocker. Keep private details out.
