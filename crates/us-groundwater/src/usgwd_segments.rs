@@ -41,6 +41,7 @@ fn segment_manifest(dir: &Path, r: &Value, n: usize, src: &Value) -> Result<Valu
     }
     let p = payload(&b)?;
     if p["source"] != *src
+        || p["normalizationPolicy"] != NORMALIZATION_POLICY
         || p["kind"] != "rainfolk-usgwd-segment"
         || p["segmentFullyRead"] != true
         || p["complete"] != false
@@ -267,7 +268,7 @@ fn reconcile(
         )?);
     }
     let accounting = json!({"inputRows":input_rows,"acceptedRecords":accepted,"identicalDuplicateRows":duplicates,"quarantinedRows":quarantine,"mapEligibleRecords":mapped,"nonmappedRecords":accepted-mapped});
-    let mut manifest = json!({"schemaVersion":1,"kind":"rainfolk-usgwd-segmented-manifest","source":src,"segments":refs,"idIndexGroups":groups,"accounting":accounting,"spatialSourceRowsBeforeDeduplication":spatial,"snapshotFullyRead":true,"complete":false,"activation":"local-review-only","existingIndexEligible":false});
+    let mut manifest = json!({"schemaVersion":1,"kind":"rainfolk-usgwd-segmented-manifest","source":src,"normalizationPolicy":NORMALIZATION_POLICY,"segments":refs,"idIndexGroups":groups,"accounting":accounting,"spatialSourceRowsBeforeDeduplication":spatial,"snapshotFullyRead":true,"complete":false,"activation":"local-review-only","existingIndexEligible":false});
     let path = dir.join("usgwd-segmented-manifest.json");
     if path.exists() {
         let mut old = payload(&read_capped(&path, MANIFEST_CAP)?)?;
@@ -309,7 +310,7 @@ pub(crate) fn run(
     lock.try_lock()
         .map_err(|_| "USGWD segmented writer already active")?;
     let fp = hash(&encode(
-        &json!({"source":src,"rowsPerSegment":rows,"maxSegments":SEGMENTS}),
+        &json!({"source":src,"normalizationPolicy":NORMALIZATION_POLICY,"rowsPerSegment":rows,"maxSegments":SEGMENTS}),
     )?);
     let cp = dir.join("checkpoint-usgwd-segments.json");
     let mut checkpoint = if cp.exists() {

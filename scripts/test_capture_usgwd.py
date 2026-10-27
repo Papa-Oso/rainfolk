@@ -52,7 +52,7 @@ class UsgwdTests(unittest.TestCase):
         return [row for group in p['idIndexGroups'] for ref in json.loads((self.root/out/group['path']).read_bytes())['idIndex'] for row in json.loads((self.root/out/ref['path']).read_bytes())['ids']]
     def test_segment_boundaries_reconcile_duplicates_conflicts_and_resume_exactly(self):
         rows=[dict(self.rows[0],**{'Well ID':f'SEG_{i}'}) for i in range(201)]
-        rows += [rows[0],dict(rows[1],County='Invented conflict'),dict(rows[2],**{'Well Depth (Feet)':'-1'})]
+        rows += [rows[0],dict(rows[1],County='Invented conflict'),dict(rows[2],**{'Year Reported':'invalid'})]
         paths=self.source(rows);first=self.segment(paths)
         self.assertFalse(first['snapshotFullyRead']);self.assertEqual(first['segments'],1)
         self.assertFalse((self.root/'segmented/usgwd-segmented-manifest.json').exists())
@@ -127,7 +127,7 @@ class UsgwdTests(unittest.TestCase):
         self.assertEqual(before,(self.root/'output/checkpoint-usgwd.json').read_bytes())
     def test_interruption_resume_cross_partition_duplicate_conflict_and_invalid_version(self):
         rows=[dict(self.rows[0],**{'Well ID':f'SYN_{i}'}) for i in range(201)]
-        rows += [rows[0],dict(rows[1],County='Invented conflict'),dict(rows[2],**{'Well Depth (Feet)':'-1'})]
+        rows += [rows[0],dict(rows[1],County='Invented conflict'),dict(rows[2],**{'Year Reported':'invalid'})]
         paths=self.source(rows);first=self.run_import(paths,allowance=1)
         self.assertFalse(first['snapshotFullyRead']);self.assertFalse((self.root/'output/usgwd-manifest.json').exists())
         final=self.run_import(paths,allowance=None)
@@ -136,6 +136,50 @@ class UsgwdTests(unittest.TestCase):
         self.assertTrue(final['snapshotFullyRead']);self.assertEqual(len(self.index()),201)
         self.run_import(paths,'fresh');self.assertEqual(self.index(),self.index('fresh'))
         paths=self.source(list(reversed(rows)));self.run_import(paths,'reverse');self.assertEqual(self.index(),self.index('reverse'))
+    def test_invalid_measurements_retain_records_raw_values_and_coordinates(self):
+        rows=[]
+        for field in ['Well Depth (Feet)','Screen Depth (Feet)','Length of Screen (Feet)','Well Capacity (GPM)','Surface Elevation (Feet)']:
+            for value in ['-5','NaN','inf','not-a-number','Unknown','']:
+                rows.append(dict(self.rows[0],**{'Well ID':f'QUALITY_{len(rows)}',field:value}))
+        paths=self.source(rows);result=self.run_import(paths,allowance=None)
+        self.assertEqual(result['accounting']['acceptedRecords'],len(rows))
+        self.assertEqual(result['accounting']['quarantinedRows'],0)
+        p=self.payload();records=[]
+        for ref in p['partitions']:records.extend(json.loads((self.root/'output'/ref['path']).read_bytes())['records'])
+        for original,record in zip(rows,records):
+            self.assertEqual(record['sourceValues'],original)
+            self.assertTrue(record['mapEligible'])
+            for field in ['Well Depth (Feet)','Screen Depth (Feet)','Length of Screen (Feet)','Well Capacity (GPM)','Surface Elevation (Feet)']:
+                raw=original[field];q=record['quantities'][field]
+                invalid=raw in ['NaN','inf','not-a-number'] or raw=='-5' and field!='Surface Elevation (Feet)'
+                if invalid:
+                    self.assertEqual(q['quality'],'invalid');self.assertIsNone(q['value'])
+                    self.assertIn({'field':field,'reason':q['issue']},record['quantityErrors'])
+                elif raw in ['Unknown','']:
+                    self.assertEqual(q['quality'],'missing');self.assertIsNone(q['value'])
+                else:self.assertEqual(q['quality'],'valid')
+        self.assertEqual(p['normalizationPolicy'],'usgwd-field-quality-v2')
+        self.assertEqual(self.run_import(paths)['manifestSha256'],result['manifestSha256'])
+
+    def test_previous_normalization_policy_refuses_resume_without_writes(self):
+        paths=self.source();self.run_import(paths)
+        cp=self.root/'output/checkpoint-usgwd.json';e=json.loads(cp.read_bytes())
+        compact=lambda v:json.dumps(v,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()
+        e['payload']['sourceFingerprint']=hashlib.sha256(compact(json.loads(paths[1].read_bytes()))).hexdigest()
+        e['sha256']=hashlib.sha256(compact(e['payload'])).hexdigest();cp.write_bytes(compact(e));before=cp.read_bytes()
+        manifest=(self.root/'output/usgwd-manifest.json').read_bytes()
+        self.run_import(paths,okay=False)
+        self.assertEqual(cp.read_bytes(),before);self.assertEqual((self.root/'output/usgwd-manifest.json').read_bytes(),manifest)
+
+    def test_field_quality_conflicts_across_segments_still_quarantine_all_versions(self):
+        rows=[dict(self.rows[0],**{'Well ID':f'QUALITY_BOUND_{i}'}) for i in range(200)]
+        rows.append(dict(rows[0],**{'Length of Screen (Feet)':'-5'}))
+        paths=self.source(rows);self.segment(paths);segmented=self.segment(paths)
+        single=self.run_import(paths,'single',allowance=None)
+        self.assertEqual(segmented['accounting'],single['accounting'])
+        self.assertEqual(single['accounting']['quarantinedRows'],2)
+        self.assertEqual(single['accounting']['acceptedRecords'],199)
+
     def test_tampered_partition_or_changed_receipt_refuses_resume(self):
         rows=[dict(self.rows[0],**{'Well ID':f'SYN_{i}'}) for i in range(201)];paths=self.source(rows);self.run_import(paths,allowance=1)
         cp=json.loads((self.root/'output/checkpoint-usgwd.json').read_bytes())['payload'];part=self.root/'output'/cp['partitions'][0]['path'];part.write_bytes(part.read_bytes()+b' ')

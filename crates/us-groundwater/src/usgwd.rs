@@ -1,6 +1,7 @@
 //! Bounded local USGWD CSV snapshots; no acquisition, scheduler or index activation.
 use super::*;
 use std::io::{BufRead, BufReader};
+pub(super) const NORMALIZATION_POLICY: &str = "usgwd-field-quality-v2";
 const RESOURCE: &str = "8b02895f02c14dd1a749bcc5584a5c55";
 const INPUT_CAP: u64 = 192 * 1024 * 1024;
 const ROW_CAP: usize = 256 * 1024;
@@ -190,6 +191,7 @@ fn normalized(f: &[String], source: &Value) -> Result<Value, &'static str> {
         values.insert((*k).into(), json!(v));
     }
     let mut quantities = serde_json::Map::new();
+    let mut quantity_errors = Vec::new();
     for (i, unit) in [
         (15, "ft"),
         (16, "ft"),
@@ -197,18 +199,26 @@ fn normalized(f: &[String], source: &Value) -> Result<Value, &'static str> {
         (18, "gal/min"),
         (20, "ft"),
     ] {
-        let n = if missing(&f[i]) {
+        let parsed = f[i].trim().parse::<f64>().ok();
+        let issue = if missing(&f[i]) {
             None
         } else {
-            Some(
-                f[i].trim()
-                    .parse::<f64>()
-                    .ok()
-                    .filter(|n| n.is_finite() && (i == 20 || *n >= 0.0))
-                    .ok_or("invalid-quantity")?,
-            )
+            match parsed {
+                None => Some("not-numeric"),
+                Some(n) if !n.is_finite() => Some("nonfinite"),
+                Some(n) if i != 20 && n < 0.0 => Some("negative"),
+                _ => None,
+            }
         };
-        quantities.insert(HEADER[i].into(),json!({"value":n.map(|n| if n==0.0 {0.0} else {n}),"unit":unit,"verticalReference":if i==20 {"source-sea-level; datum-unspecified"} else {"source-definition"}}));
+        let value = if missing(&f[i]) || issue.is_some() {
+            None
+        } else {
+            parsed.map(|n| if n == 0.0 { 0.0 } else { n })
+        };
+        if let Some(reason) = issue {
+            quantity_errors.push(json!({"field":HEADER[i],"reason":reason}));
+        }
+        quantities.insert(HEADER[i].into(),json!({"value":value,"unit":unit,"quality":if issue.is_some() {"invalid"} else if value.is_none() {"missing"} else {"valid"},"issue":issue,"verticalReference":if i==20 {"source-sea-level; datum-unspecified"} else {"source-definition"}}));
     }
     let mut years = serde_json::Map::new();
     for i in [22, 23] {
@@ -242,7 +252,7 @@ fn normalized(f: &[String], source: &Value) -> Result<Value, &'static str> {
         json!({"id":format!("USGWD-{}-{}",source["releaseSha256"].as_str().unwrap(),f[0]),
         "source":"USGWD","sourceRecordId":f[0],"stateRecordId":if missing(&f[1]) {Value::Null} else {json!(f[1])},
         "identityScope":"published-release; not stable across releases","sourceSystem":null,
-        "recordType":"historical-well-catalog-record","sourceValues":values,"quantities":quantities,"sourceYears":years,
+        "recordType":"historical-well-catalog-record","normalizationPolicy":NORMALIZATION_POLICY,"sourceValues":values,"quantities":quantities,"quantityErrors":quantity_errors,"sourceYears":years,
         "sourceCoordinates":{"longitude":f[2],"latitude":f[3],"crs":"EPSG:4269","datum":"NAD83","unit":"decimal-degrees"},
         "longitude":lon,"latitude":lat,"coordinateReference":"EPSG:4269","coordinateAccuracy":"source-quality-flags; no surveyed-wellhead inference",
         "spatial":spatial,"mapEligible":eligible,"mapEligibilityScope":"requires CRS-aware consumer; no EPSG:4326 conversion applied",
@@ -401,12 +411,14 @@ fn ingest_source(
     started: Instant,
 ) -> Result<Value, String> {
     use std::io::{Seek, SeekFrom};
-    let fingerprint = hash(&encode(&match slice {
-        Some(s) => {
-            json!({"source":src,"startByte":s.start_byte,"rowOffset":s.row_offset,"rows":s.rows})
-        }
-        None => src.clone(),
-    })?);
+    let fingerprint = hash(&encode(
+        &json!({"normalizationPolicy":NORMALIZATION_POLICY,"input":match slice {
+            Some(s) => {
+                json!({"source":src,"startByte":s.start_byte,"rowOffset":s.row_offset,"rows":s.rows})
+            }
+            None => src.clone(),
+        }}),
+    )?);
     let input = verified_input(
         csv,
         &src,
@@ -603,7 +615,7 @@ fn ingest_source(
             started,
         )?);
     }
-    let mut manifest = json!({"schemaVersion":1,"kind":"rainfolk-usgwd-manifest","source":src,"partitions":refs,"idIndex":indices,"accounting":reports.counts(),"spatialSourceRowsBeforeDeduplication":spatial,"complete":false,"snapshotFullyRead":true,"activation":"local-review-only","existingIndexEligible":false});
+    let mut manifest = json!({"schemaVersion":1,"kind":"rainfolk-usgwd-manifest","source":src,"normalizationPolicy":NORMALIZATION_POLICY,"partitions":refs,"idIndex":indices,"accounting":reports.counts(),"spatialSourceRowsBeforeDeduplication":spatial,"complete":false,"snapshotFullyRead":true,"activation":"local-review-only","existingIndexEligible":false});
     if let Some(s) = slice {
         manifest["kind"] = json!("rainfolk-usgwd-segment");
         manifest["snapshotFullyRead"] = json!(eof);
@@ -746,6 +758,9 @@ mod tests {
         f[15] = "0".into();
         assert_eq!(normalized(&f, &s).unwrap()["mapEligible"], true);
         f[15] = "-1".into();
-        assert!(normalized(&f, &s).is_err());
+        let r = normalized(&f, &s).unwrap();
+        assert_eq!(r["quantities"]["Well Depth (Feet)"]["quality"], "invalid");
+        assert!(r["quantities"]["Well Depth (Feet)"]["value"].is_null());
+        assert_eq!(r["sourceValues"]["Well Depth (Feet)"], "-1");
     }
 }

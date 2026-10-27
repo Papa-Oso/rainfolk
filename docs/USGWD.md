@@ -63,8 +63,18 @@ rows/output when resuming. Larger states use the separate segmented path below;
 the original single-file limits remain unchanged.
 No dependencies were added. CSV quoting supports commas, escaped double quotes,
 embedded newlines, UTF-8/BOM and LF/CRLF. Structurally ambiguous quoting stops the
-stream, retaining earlier checkpoints; row-level UTF-8, width, quantity, ID and
-year errors quarantine with value-free reasons.
+stream, retaining earlier checkpoints; row-level UTF-8, width, ID and year errors quarantine with value-free reasons.
+Measurement errors retain the catalog record: each quantity has `quality`
+(valid, missing or invalid), an explicit `issue` and a null usable `value` when
+invalid. `sourceValues` keeps its exact original text; `quantityErrors` names the
+affected fields and reasons. Negative depths, screen lengths and capacities,
+nonfinite values and malformed numbers are never corrected or silently treated
+as missing. Signed finite surface elevations remain valid. Identity conflicts
+still quarantine every conflicting version across partitions/segments.
+
+Normalization policy `usgwd-field-quality-v2` is pinned in records, manifests
+and checkpoint fingerprints. An earlier policy cannot resume into this one.
+Use a new output directory and preserve prior generations and raw evidence.
 
 The existing well-jobs immutable writer, atomic checkpoint writer, exclusive
 writer lock and source-ID reconciliation are reused. Resume verifies the source
