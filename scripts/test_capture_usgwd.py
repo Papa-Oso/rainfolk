@@ -77,5 +77,42 @@ class UsgwdTests(unittest.TestCase):
         paths=self.source();paths[0].write_bytes(paths[0].read_bytes()+b'changed');self.run_import(paths,okay=False)
         paths=self.source();self.run_import(paths,allowance=0,okay=False)
         paths[1].write_text(paths[1].read_text()[:-1]+',"schemaVersion":1}');self.run_import(paths,okay=False)
+    def test_invalid_utf8_in_another_field_quarantines_all_id_versions_in_both_orders(self):
+        good=self.rows[0];bad=dict(good,County='INVALID-UTF8-MARKER')
+        for n,rows in enumerate(([good,bad],[bad,good])):
+            with self.subTest(order=n):
+                paths=self.source(rows);raw=paths[0].read_bytes().replace(b'INVALID-UTF8-MARKER',b'\x81');paths=self.source(raw=raw)
+                r=self.run_import(paths,f'utf8-{n}')
+                self.assertEqual(r['accounting']['acceptedRecords'],0);self.assertEqual(r['accounting']['quarantinedRows'],2)
+                index=self.index(f'utf8-{n}');self.assertEqual(len(index),1);self.assertEqual(index[0]['status'],'quarantined')
+                self.assertEqual(index[0]['sourceRows'],2);self.assertIsNone(index[0]['contentSha256'])
+    def test_invalid_utf8_id_collision_across_checkpoint_partition_in_both_orders(self):
+        good=self.rows[0];bad=dict(good,County='INVALID-UTF8-MARKER')
+        filler=[dict(good,**{'Well ID':f'FILLER_{i}'}) for i in range(199)]
+        for n,(first,last) in enumerate(((good,bad),(bad,good))):
+            with self.subTest(order=n):
+                paths=self.source([first,*filler,last]);raw=paths[0].read_bytes().replace(b'INVALID-UTF8-MARKER',b'\x81');paths=self.source(raw=raw)
+                out=f'cross-utf8-{n}';self.assertFalse(self.run_import(paths,out,allowance=1)['snapshotFullyRead'])
+                r=self.run_import(paths,out,allowance=1)
+                self.assertEqual(r['accounting'],dict(inputRows=201,acceptedRecords=199,identicalDuplicateRows=0,quarantinedRows=2,mapEligibleRecords=199,nonmappedRecords=0))
+                index=self.index(out);self.assertEqual(sum(x['status']=='quarantined' for x in index),1)
+        self.assertEqual(self.index('cross-utf8-0'),self.index('cross-utf8-1'))
+    def test_documented_quality_domains_preserve_raw_and_suppress_invalid_spellings(self):
+        cases=[('Flag State',' 1 ','source-state-or-US-inconsistency'),('Flag US',' 1 ','source-state-or-US-inconsistency')]
+        for key in ['Flag County','Flag State','Flag US','Flag Duplicate']:
+            cases += [(key,v,'invalid-source-quality-flag') for v in ['1.0','unexpected','']]
+        cases += [('Flag County','3','invalid-source-quality-flag'),('Flag State','3','invalid-source-quality-flag'),
+            ('Flag US','-1','invalid-source-quality-flag'),('Flag Duplicate','4','invalid-source-quality-flag'),
+            ('Location Verified','unexpected','invalid-source-quality-flag')]
+        for n,(key,raw,reason) in enumerate(cases):
+            with self.subTest(field=key,raw=raw):
+                out=f'flag-{n}';r=self.run_import(self.source([dict(self.rows[0],**{key:raw})]),out)
+                self.assertEqual(r['accounting']['acceptedRecords'],1);self.assertEqual(r['accounting']['mapEligibleRecords'],0)
+                p=self.payload(out);record=json.loads((self.root/out/p['partitions'][0]['path']).read_bytes())['records'][0]
+                self.assertEqual(record['sourceValues'][key],raw);self.assertEqual(record['mapSuppressionReason'],reason)
+        out='valid-flags';r=self.run_import(self.source([dict(self.rows[0],**{'Flag State':' 0 ','Flag US':'0','Flag Duplicate':'3'})]),out)
+        self.assertEqual(r['accounting']['mapEligibleRecords'],1)
+        p=self.payload(out);record=json.loads((self.root/out/p['partitions'][0]['path']).read_bytes())['records'][0]
+        self.assertEqual(record['sourceValues']['Flag State'],' 0 ')
 
 if __name__=='__main__':unittest.main()

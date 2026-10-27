@@ -129,6 +129,18 @@ fn native(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
 }
+// Only documented integer spellings, with surrounding whitespace removed.
+// Decimal/scientific spellings and unknown codes are not silently coerced.
+fn flag(s: &str, max: u8) -> Option<u8> {
+    match s.trim() {
+        "0" => Some(0),
+        "1" => Some(1),
+        "2" => Some(2),
+        "3" => Some(3),
+        _ => None,
+    }
+    .filter(|n| *n <= max)
+}
 fn normalized(f: &[String], source: &Value) -> Result<Value, &'static str> {
     if f.len() != HEADER.len() {
         return Err("column-count");
@@ -190,7 +202,11 @@ fn normalized(f: &[String], source: &Value) -> Result<Value, &'static str> {
         .ok()
         .filter(|n| n.is_finite() && (-90.0..=90.0).contains(n));
     let spatial = lon.is_some() && lat.is_some();
-    let eligible = spatial && f[13] != "1" && f[14] != "1";
+    let flags_valid = [12, 13, 14].iter().all(|i| flag(&f[*i], 2).is_some())
+        && flag(&f[28], 3).is_some()
+        && matches!(f[11].trim(), "Yes" | "No" | "Unknown");
+    let eligible =
+        spatial && flags_valid && flag(&f[13], 2) != Some(1) && flag(&f[14], 2) != Some(1);
     Ok(
         json!({"id":format!("USGWD-{}-{}",source["releaseSha256"].as_str().unwrap(),f[0]),
         "source":"USGWD","sourceRecordId":f[0],"stateRecordId":if missing(&f[1]) {Value::Null} else {json!(f[1])},
@@ -199,7 +215,7 @@ fn normalized(f: &[String], source: &Value) -> Result<Value, &'static str> {
         "sourceCoordinates":{"longitude":f[2],"latitude":f[3],"crs":"EPSG:4269","datum":"NAD83","unit":"decimal-degrees"},
         "longitude":lon,"latitude":lat,"coordinateReference":"EPSG:4269","coordinateAccuracy":"source-quality-flags; no surveyed-wellhead inference",
         "spatial":spatial,"mapEligible":eligible,"mapEligibilityScope":"requires CRS-aware consumer; no EPSG:4326 conversion applied",
-        "mapSuppressionReason":if !spatial {json!("missing-or-invalid-coordinates")} else if !eligible {json!("source-state-or-US-inconsistency")} else {Value::Null},
+        "mapSuppressionReason":if !spatial {json!("missing-or-invalid-coordinates")} else if !flags_valid {json!("invalid-source-quality-flag")} else if !eligible {json!("source-state-or-US-inconsistency")} else {Value::Null},
         "existingIndexEligible":false,"existingIndexLimitation":"NAD83 conversion and candidate contract bridge deferred",
         "fips":f[6],"huc12":f[9],"activeWellStatus":"source-reported; not independently verified","waterSafetyStatus":"not-assessed"}),
     )
@@ -374,13 +390,14 @@ pub(super) fn run(
             if count > ROWS {
                 return Err("USGWD row cap; checkpoint retained".into());
             }
-            let fields = text(raw);
-            let id = fields
-                .as_ref()
-                .ok()
-                .and_then(|f| f.first())
+            // A bad byte in another column must not erase a recoverable ID:
+            // invalid versions still poison every version of that release ID.
+            let id = raw
+                .first()
+                .and_then(|f| std::str::from_utf8(f).ok())
                 .filter(|s| native(s))
                 .map(|s| format!("USGWD-{}-{s}", src["releaseSha256"].as_str().unwrap()));
+            let fields = text(raw);
             match fields.and_then(|f| normalized(&f, &src)) {
                 Ok(mut r) => {
                     let content = hash(&encode(&r)?);
@@ -525,6 +542,7 @@ mod tests {
         f[9] = "000123456789".into();
         f[11] = "Unknown".into();
         f[12] = "2".into();
+        f[13] = "0".into();
         f[14] = "0".into();
         f[28] = "3".into();
         f[22] = "Unknown".into();

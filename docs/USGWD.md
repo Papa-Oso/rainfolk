@@ -56,6 +56,12 @@ Longitude/latitude remain NAD83 EPSG:4269, as documented by the attribute table
 and publisher projection evidence. Missing/invalid coordinates retain nonspatial
 catalog records. Map-eligible counts mean valid NAD83 pairs without a reported
 state/US inconsistency, for a CRS-aware consumer; source flags remain warnings.
+The documented integer flag domains are 0..2 for county/state/US and 0..3 for
+duplicates. Surrounding whitespace is permitted; decimal spellings such as 1.0,
+missing values and unsupported codes suppress mapping while retaining the record
+and exact raw strings. Location Verified must be Yes, No or Unknown (with optional
+surrounding whitespace); unsupported values likewise suppress mapping. A bad UTF-8
+byte outside a recoverable Well ID still quarantines all versions of that ID.
 They do not certify precise wellheads. `existingIndexEligible=false`: the existing
 EPSG:4326 spatial index still needs a reviewed datum conversion and candidate
 contract bridge. No index or corpus is activated here. Depth/screen/elevation
@@ -74,6 +80,11 @@ dates vary (Texas February 2022, Rhode Island September 2022).
 Acquire official state updates into separate source namespaces. Use documented
 stable state report IDs with explicit source-system mappings; nullable/nonunique
 IDs and collisions require reconciliation evidence, not proximity merging.
+Maintain immutable alias evidence tuples containing the source-system namespace,
+exact raw state ID (including missingness), release-scoped USGWD ID, release ID,
+and evidence references such as input hash, source row and documented crosswalk.
+Permit multiple candidate aliases and explicit unresolved/collision states; a
+matching state-ID string alone never establishes a unique well or permits overwrite.
 Maintain checkedAt, actual source publication/modification times and dated source
 observations separately. Conditional requests/validators or complete file hashes
 detect change; a highest sequential ID cannot detect historical corrections.
