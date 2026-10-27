@@ -90,8 +90,8 @@ pub(super) fn cached_capture(cache: &Path, fixture: bool) -> Result<Vec<u8>, Str
 }
 
 #[derive(Default)]
-struct Reports {
-    ids: BTreeMap<String, (Option<String>, u64, bool)>,
+pub(super) struct Reports {
+    pub(super) ids: BTreeMap<String, (Option<String>, u64, bool)>,
     anonymous: u64,
 }
 impl Reports {
@@ -139,16 +139,33 @@ impl Reports {
                 let (h, m) = records.get(&id).unwrap();
                 (Some(id), Some(h.clone()), *m)
             };
-            if let Some(id) = id {
-                let entry = self.ids.entry(id).or_insert((content.clone(), 0, mapped));
-                if entry.0 != content {
-                    entry.0 = None;
-                }
-                entry.1 += 1;
+            self.observe(id, content, mapped);
+        }
+    }
+    pub(super) fn observe(&mut self, id: Option<String>, content: Option<String>, mapped: bool) {
+        if let Some(id) = id {
+            let e = self.ids.entry(id).or_insert((content.clone(), 0, mapped));
+            if e.0 != content {
+                e.0 = None;
+            }
+            e.1 += 1;
+        } else {
+            self.anonymous += 1;
+        }
+    }
+    pub(super) fn counts(&self) -> Value {
+        let (mut accepted, mut duplicates, mut quarantined, mut mapped) = (0, 0, self.anonymous, 0);
+        for (content, n, m) in self.ids.values() {
+            if content.is_some() {
+                accepted += 1;
+                duplicates += n - 1;
+                mapped += u64::from(*m);
             } else {
-                self.anonymous += 1;
+                quarantined += n;
             }
         }
+        json!({"acceptedRecords":accepted,"identicalDuplicateRows":duplicates,"quarantinedRows":quarantined,
+            "mapEligibleRecords":mapped,"nonmappedRecords":accepted-mapped,"inputRows":accepted+duplicates+quarantined})
     }
     fn summary(&self) -> Value {
         let mut accepted = Vec::new();

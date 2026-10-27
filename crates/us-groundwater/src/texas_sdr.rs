@@ -9,6 +9,22 @@ pub const SOURCE: &str =
     "https://services.twdb.texas.gov/arcgis/rest/services/Public/WellReports/FeatureServer/0";
 pub const MAX_ROWS: usize = 200;
 pub const MAX_BYTES: usize = 1024 * 1024;
+pub const BULK_SOURCE: &str = "https://www.twdb.texas.gov/groundwater/data/SDRDownload.zip";
+pub const BULK_FIELDS: [&str; 13] = [
+    "WellReportTrackingNumber",
+    "ProposedUse",
+    "CoordDDLat",
+    "CoordDDLong",
+    "DateSubmitted",
+    "DrillingStartDate",
+    "DrillingEndDate",
+    "KnownLocationError",
+    "HorizontalDatumType",
+    "LocationVerifiedByDriller",
+    "TypeOfWork",
+    "OriginalWellReportTrackingNumber",
+    "NumberOfWellsDrilled",
+];
 pub const FIELDS: [&str; 7] = [
     "WellReportTrackingNumber",
     "ProposedUse",
@@ -273,17 +289,99 @@ fn record(attributes: &Value) -> Result<Value, &'static str> {
     }))
 }
 
+/// Bulk has its own source fields/semantics; reuse report/number/coordinate validation,
+/// without pretending a pipe export is an ArcGIS response or guessing a datum/date zone.
+pub fn bulk_record(values: &Value) -> Result<Value, &'static str> {
+    only_keys(values, &BULK_FIELDS).map_err(|_| "bulk-field-projection")?;
+    if values.as_object().unwrap().len() != BULK_FIELDS.len()
+        || BULK_FIELDS.iter().any(|k| {
+            values[k]
+                .as_str()
+                .is_none_or(|s| s.len() > 1024 || s.chars().any(char::is_control))
+        })
+    {
+        return Err("invalid-bulk-field");
+    }
+    let numeric = |key: &str| -> Result<Value, &'static str> {
+        let s = values[key].as_str().unwrap().trim();
+        if s.is_empty() {
+            return Ok(Value::Null);
+        }
+        let n = s.parse::<f64>().map_err(|_| "invalid-number")?;
+        serde_json::Number::from_f64(n)
+            .map(Value::Number)
+            .ok_or("invalid-number")
+    };
+    let mut output = record(
+        &json!({"WellReportTrackingNumber":values["WellReportTrackingNumber"],
+        "ProposedUse":values["ProposedUse"],"LatitudeDD":numeric("CoordDDLat")?,"LongitudeDD":numeric("CoordDDLong")?,
+        "BoreholeDepthFt":null,"LocationError":null,"DateOfWellCompletion":null}),
+    )?;
+    let mut dates = serde_json::Map::new();
+    for field in ["DateSubmitted", "DrillingStartDate", "DrillingEndDate"] {
+        let raw = values[field].as_str().unwrap();
+        let parsed = if raw.is_empty() {
+            Value::Null
+        } else {
+            if super::time_precision(raw) != Some("day") {
+                return Err("invalid-bulk-calendar-date");
+            }
+            json!({"date":raw,"precision":"day","timeZone":null})
+        };
+        dates.insert(field.into(), parsed);
+    }
+    let datum = values["HorizontalDatumType"]
+        .as_str()
+        .unwrap()
+        .trim()
+        .to_ascii_uppercase();
+    output["serviceCoordinateReference"] = Value::Null;
+    output["sourceCoordinates"] = json!({"latitude":values["CoordDDLat"],"longitude":values["CoordDDLong"],
+        "horizontalDatum":values["HorizontalDatumType"],"unit":"decimal-degrees"});
+    if output["mapEligible"] == true && datum != "WGS84" {
+        output["mapEligible"] = json!(false);
+        output["latitude"] = Value::Null;
+        output["longitude"] = Value::Null;
+        output["mapSuppressionReason"] = json!(if datum.is_empty() {
+            "source-datum-missing"
+        } else if ["NAD27", "NAD83"].contains(&datum.as_str()) {
+            "datum-conversion-not-applied"
+        } else {
+            "unsupported-source-datum"
+        });
+        output["coordinateQuality"] = output["mapSuppressionReason"].clone();
+    }
+    output["coordinateReference"] = if output["mapEligible"] == true {
+        json!("EPSG:4326")
+    } else {
+        Value::Null
+    };
+    output["sourceDates"] = json!(dates);
+    output["bulkSourceValues"] = values.clone();
+    output["knownLocationError"] = values["KnownLocationError"].clone();
+    output["locationQualityWarning"] = json!(
+        "source-datum-and-quality-retained; coordinates-unverified; bulk text flag is not an API integer code"
+    );
+    output["boreholeDepth"] =
+        json!({"value":null,"unit":"ft","status":"not-derived-from-core-table"});
+    Ok(output)
+}
+
 /// Normalize one bounded synthetic or explicitly public ArcGIS-shaped response. Invalid rows are quarantined;
 /// malformed envelopes, privacy/schema surprises and limits refuse the entire capture.
 /// `synthetic` is an operator assertion, not an authenticity or rights attestation.
-pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
+pub fn decode_capture_json(bytes: &[u8]) -> Result<Value, String> {
     if bytes.len() > MAX_BYTES {
         return Err("SDR input byte limit".into());
     }
     // Do not include serde's source excerpts (which may contain unexpected private data).
     serde_json::from_slice::<UniqueMembers>(bytes)
         .map_err(|_| "invalid SDR JSON or duplicate member")?;
-    let input: Value = serde_json::from_slice(bytes).map_err(|_| "invalid SDR JSON")?;
+    serde_json::from_slice(bytes).map_err(|_| "invalid SDR JSON".into())
+}
+
+pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
+    let input = decode_capture_json(bytes)?;
     let public = input["kind"] == "rainfolk-texas-sdr-public-capture";
     only_keys(
         &input,

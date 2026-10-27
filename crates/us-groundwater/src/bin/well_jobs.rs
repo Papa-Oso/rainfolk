@@ -15,6 +15,8 @@ const MAX_BYTES: usize = 1024 * 1024;
 mod page_segments;
 #[path = "../job_partitions.rs"]
 mod partitions;
+#[path = "../sdr_bulk.rs"]
+mod sdr_bulk;
 #[path = "../sdr_jobs.rs"]
 mod sdr_jobs;
 fn hash(bytes: &[u8]) -> String {
@@ -496,6 +498,19 @@ fn main() {
 }
 fn cli() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|s| s == "import-sdr-bulk") {
+        if args.len() != 2 {
+            return Err(
+                "usage: well-jobs import-sdr-bulk <fresh-directory>; bounded JSONL on stdin".into(),
+            );
+        }
+        let result = sdr_bulk::ingest(Path::new(&args[1]), &mut std::io::stdin().lock())?;
+        println!(
+            "{}",
+            serde_json::to_string(&result).map_err(|_| "bulk summary encoding")?
+        );
+        return Ok(());
+    }
     if args.first().is_some_and(|s| s == "segment-page") {
         if args.len() != 3 {
             return Err(

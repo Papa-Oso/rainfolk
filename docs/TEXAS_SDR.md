@@ -183,6 +183,9 @@ checks input, record, payload and manifest hashes. Candidate manifest SHA-256:
 
 ## Capture and record contract
 
+For the separate local pipe-export path, see [bulk import](TEXAS_SDR_BULK.md).
+Bulk dates, datum and text-quality flags are not relabeled as API values.
+
 ### Bounded resumable jobs
 
 `well-jobs run|resume|status <queue.json> <job-directory>` accepts adapter
