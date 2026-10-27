@@ -252,6 +252,9 @@ fn normalized(f: &[String], source: &Value) -> Result<Value, &'static str> {
     )
 }
 fn source(path: &Path) -> Result<Value, String> {
+    source_with_cap(path, INPUT_CAP)
+}
+fn source_with_cap(path: &Path, input_cap: u64) -> Result<Value, String> {
     let s = gev_us_groundwater::texas_sdr::decode_capture_json(&read_capped(path, MAX_BYTES)?)?;
     let state = s["state"]
         .as_str()
@@ -292,7 +295,7 @@ fn source(path: &Path) -> Result<Value, String> {
         || !hex(&s["schemaSha256"])
         || s["inputBytes"]
             .as_u64()
-            .is_none_or(|n| n == 0 || n > INPUT_CAP)
+            .is_none_or(|n| n == 0 || n > input_cap)
         || s["checkedAt"]
             .as_str()
             .and_then(gev_us_groundwater::time_precision)
@@ -346,7 +349,15 @@ pub(super) fn run_full(csv: &Path, receipt: &Path, dir: &Path) -> Result<Value, 
 fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Value, String> {
     let started = Instant::now();
     let src = source(receipt)?;
-    let fingerprint = hash(&encode(&src)?);
+    ingest_source(csv, src, dir, allowance, None, started)
+}
+#[derive(Clone, Copy)]
+struct Slice {
+    start_byte: u64,
+    row_offset: usize,
+    rows: usize,
+}
+fn verified_input(csv: &Path, src: &Value, cap: u64, started: Instant) -> Result<File, String> {
     let mut input = File::open(csv).map_err(|_| "CSV open failed")?;
     if !input
         .metadata()
@@ -364,7 +375,7 @@ fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Va
             break;
         }
         size += n as u64;
-        if size > INPUT_CAP {
+        if size > cap {
             return Err("CSV input cap".into());
         }
         deadline(started)?;
@@ -379,6 +390,33 @@ fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Va
     input
         .seek(SeekFrom::Start(0))
         .map_err(|_| "CSV rewind failed")?;
+    Ok(input)
+}
+fn ingest_source(
+    csv: &Path,
+    src: Value,
+    dir: &Path,
+    allowance: usize,
+    slice: Option<Slice>,
+    started: Instant,
+) -> Result<Value, String> {
+    use std::io::{Seek, SeekFrom};
+    let fingerprint = hash(&encode(&match slice {
+        Some(s) => {
+            json!({"source":src,"startByte":s.start_byte,"rowOffset":s.row_offset,"rows":s.rows})
+        }
+        None => src.clone(),
+    })?);
+    let input = verified_input(
+        csv,
+        &src,
+        if slice.is_some() {
+            segments::PARENT_BYTES
+        } else {
+            INPUT_CAP
+        },
+        started,
+    )?;
     fs::create_dir_all(dir).map_err(|_| "output directory failed")?;
     let lock = OpenOptions::new()
         .read(true)
@@ -421,6 +459,19 @@ fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Va
     if header != HEADER {
         return Err("USGWD schema/header changed".into());
     }
+    let row_offset = slice.map_or(0, |s| s.row_offset);
+    let read_start = slice.map_or(0, |s| s.start_byte);
+    if read_start != 0 {
+        let mut input = reader.into_inner().file;
+        input
+            .seek(SeekFrom::Start(read_start))
+            .map_err(|_| "CSV slice seek failed")?;
+        reader = BufReader::new(DigestReader {
+            file: input,
+            sha: Sha256::new(),
+            bytes: 0,
+        });
+    }
     let (mut count, mut used, mut new_parts, mut spatial) = (0usize, 0u64, 0usize, 0u64);
     let parse_started = Instant::now();
     let (mut replayed_rows, mut replay_seconds) = (0usize, 0.0f64);
@@ -429,7 +480,7 @@ fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Va
     loop {
         let mut records = Vec::new();
         let mut quarantine = Vec::new();
-        let first = count + 2;
+        let first = row_offset + count + 2;
         for _ in 0..200 {
             deadline(started)?;
             let Some(raw) = csv_row(&mut reader)? else {
@@ -453,19 +504,21 @@ fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Va
                     reports.observe(id, Some(content.clone()), r["mapEligible"] == true);
                     spatial += u64::from(r["spatial"] == true);
                     r["contentSha256"] = json!(content);
-                    r["provenance"] = json!({"inputSha256":src["inputSha256"],"sourceRow":count+1,"releaseSha256":src["releaseSha256"]});
+                    r["provenance"] = json!({"inputSha256":src["inputSha256"],"sourceRow":row_offset+count+1,"releaseSha256":src["releaseSha256"]});
                     records.push(r);
                 }
                 Err(reason) => {
                     reports.observe(id.clone(), None, false);
-                    quarantine.push(json!({"sourceRow":count+1,"sourceId":id,"reason":reason}));
+                    quarantine.push(
+                        json!({"sourceRow":row_offset+count+1,"sourceId":id,"reason":reason}),
+                    );
                 }
             }
         }
-        if count + 2 == first {
+        if row_offset + count + 2 == first {
             break;
         }
-        let value = json!({"schemaVersion":1,"kind":"rainfolk-usgwd-row-partition","source":src,"firstRow":first,"lastRow":count+1,"records":records,"quarantine":quarantine,"requiresGlobalReconciliation":true});
+        let value = json!({"schemaVersion":1,"kind":"rainfolk-usgwd-row-partition","source":src,"firstRow":first,"lastRow":row_offset+count+1,"records":records,"quarantine":quarantine,"requiresGlobalReconciliation":true});
         let index = refs.len();
         let bytes = encode(&value)?;
         let reference = if index < old.len() {
@@ -492,6 +545,9 @@ fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Va
             let mut state = json!({"sourceFingerprint":fingerprint,"partitions":refs,"inputRows":count,"snapshotFullyRead":false,"generation":index});
             save_bounded(&cp, &mut state, CHECKPOINT_CAP, started)?;
         }
+        if slice.is_some_and(|s| count == s.rows) {
+            break;
+        }
         if new_parts >= allowance
             && !reader
                 .fill_buf()
@@ -506,8 +562,15 @@ fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Va
             );
         }
     }
+    let eof = reader
+        .fill_buf()
+        .map_err(|_| "CSV read failure")?
+        .is_empty();
+    let end_byte = read_start + reader.get_ref().bytes - reader.buffer().len() as u64;
     let digest = reader.into_inner();
-    if digest.bytes != size
+    if slice.is_some() {
+        verified_input(csv, &src, segments::PARENT_BYTES, started)?;
+    } else if digest.bytes != src["inputBytes"].as_u64().unwrap()
         || format!("{:x}", digest.sha.finalize()) != src["inputSha256"].as_str().unwrap()
     {
         return Err("CSV changed during processing".into());
@@ -541,6 +604,12 @@ fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Va
         )?);
     }
     let mut manifest = json!({"schemaVersion":1,"kind":"rainfolk-usgwd-manifest","source":src,"partitions":refs,"idIndex":indices,"accounting":reports.counts(),"spatialSourceRowsBeforeDeduplication":spatial,"complete":false,"snapshotFullyRead":true,"activation":"local-review-only","existingIndexEligible":false});
+    if let Some(s) = slice {
+        manifest["kind"] = json!("rainfolk-usgwd-segment");
+        manifest["snapshotFullyRead"] = json!(eof);
+        manifest["segmentFullyRead"] = json!(true);
+        manifest["slice"] = json!({"startByte":s.start_byte,"endByte":end_byte,"rowOffset":row_offset,"rows":count});
+    }
     deadline(started)?;
     if envelope_bytes(&manifest)? > MANIFEST_CAP
         || used + envelope_bytes(&manifest)? as u64 + CHECKPOINT_CAP as u64 > OUTPUT_CAP
@@ -565,10 +634,13 @@ fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Va
         save_bounded(&final_path, &mut manifest, MANIFEST_CAP, started)?;
     }
     Ok(
-        json!({"accounting":reports.counts(),"complete":false,"snapshotFullyRead":true,"partitions":refs.len(),"newPartitions":new_parts,"manifestSha256":hash(&read_capped(&final_path,MANIFEST_CAP)?),"artifactBytes":used,"elapsedSeconds":started.elapsed().as_secs_f64(),"networkRequests":0,"prefixReplayRows":replayed_rows,"prefixReplaySeconds":replay_seconds,
+        json!({"accounting":reports.counts(),"complete":false,"snapshotFullyRead":eof,"partitions":refs.len(),"newPartitions":new_parts,"manifestSha256":hash(&read_capped(&final_path,MANIFEST_CAP)?),"artifactBytes":used,"elapsedSeconds":started.elapsed().as_secs_f64(),"networkRequests":0,"prefixReplayRows":replayed_rows,"prefixReplaySeconds":replay_seconds,
         "limits":{"inputBytes":INPUT_CAP,"rows":ROWS,"outputBytes":OUTPUT_CAP,"checkpointBytes":CHECKPOINT_CAP,"manifestBytes":MANIFEST_CAP,"invocationSeconds":RUN_SECONDS}}),
     )
 }
+
+#[path = "usgwd_segments.rs"]
+pub(super) mod segments;
 
 #[cfg(test)]
 mod tests {

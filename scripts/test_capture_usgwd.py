@@ -41,6 +41,81 @@ class UsgwdTests(unittest.TestCase):
         return json.loads((self.root/out/'usgwd-manifest.json').read_bytes())['payload']
     def index(self,out='output'):
         return [r for ref in self.payload(out)['idIndex'] for r in json.loads((self.root/out/ref['path']).read_bytes())['ids']]
+    def segment(self,paths,out='segmented',rows=200,okay=True,allowance=None):
+        args=[str(BINARY),'import-usgwd-segmented',*map(str,paths),str(self.root/out),str(rows)]
+        if allowance is not None:args.append(str(allowance))
+        r=subprocess.run(args,capture_output=True)
+        if okay:self.assertEqual(r.returncode,0,r.stderr.decode());return json.loads(r.stdout)
+        self.assertNotEqual(r.returncode,0);return r
+    def segmented_index(self,out='segmented'):
+        p=json.loads((self.root/out/'usgwd-segmented-manifest.json').read_bytes())['payload']
+        return [row for group in p['idIndexGroups'] for ref in json.loads((self.root/out/group['path']).read_bytes())['idIndex'] for row in json.loads((self.root/out/ref['path']).read_bytes())['ids']]
+    def test_segment_boundaries_reconcile_duplicates_conflicts_and_resume_exactly(self):
+        rows=[dict(self.rows[0],**{'Well ID':f'SEG_{i}'}) for i in range(201)]
+        rows += [rows[0],dict(rows[1],County='Invented conflict'),dict(rows[2],**{'Well Depth (Feet)':'-1'})]
+        paths=self.source(rows);first=self.segment(paths)
+        self.assertFalse(first['snapshotFullyRead']);self.assertEqual(first['segments'],1)
+        self.assertFalse((self.root/'segmented/usgwd-segmented-manifest.json').exists())
+        final=self.segment(paths);single=self.run_import(paths,'single',allowance=None)
+        self.assertEqual(final['accounting'],single['accounting'])
+        self.assertEqual(self.segmented_index(),self.index('single'))
+        manifest=self.root/'segmented/usgwd-segmented-manifest.json';checkpoint=self.root/'segmented/checkpoint-usgwd-segments.json'
+        before=(manifest.read_bytes(),checkpoint.read_bytes())
+        replay=self.segment(paths);self.assertTrue(replay['snapshotFullyRead'])
+        self.assertEqual(before,(manifest.read_bytes(),checkpoint.read_bytes()))
+        self.assertEqual(replay['newSegments'],0)
+        p=json.loads(manifest.read_bytes())['payload'];self.assertFalse(p['complete']);self.assertFalse(p['existingIndexEligible'])
+        source=json.loads(paths[1].read_bytes());self.assertEqual(p['source']['inputSha256'],source['inputSha256'])
+        records=[];parts=[];indices=[]
+        for ref in p['segments']:
+            d=self.root/'segmented'/ref['directory'];m=json.loads((d/ref['path']).read_bytes())['payload']
+            parts.extend(m['partitions'])
+            for part in m['partitions']:records.extend(json.loads((d/part['path']).read_bytes())['records'])
+        for group in p['idIndexGroups']:indices.extend(json.loads((self.root/'segmented'/group['path']).read_bytes())['idIndex'])
+        self.assertEqual(parts,self.payload('single')['partitions']);self.assertEqual(indices,self.payload('single')['idIndex'])
+        self.assertEqual([r['provenance']['sourceRow'] for r in records],list(range(2,205)))
+        self.assertTrue(all(r['provenance']['inputSha256']==source['inputSha256'] for r in records))
+    def test_segment_interruption_within_work_unit_replays_only_that_prefix(self):
+        rows=[dict(self.rows[0],**{'Well ID':f'PAUSE_{i}'},County='Invented\nquoted,"county') for i in range(401)]
+        rows[-1]=dict(rows[0],County='Conflicting last chunk')
+        paths=self.source(rows);pause=self.segment(paths,rows=400,allowance=1)
+        self.assertEqual(pause['segments'],0);self.assertEqual(pause['activeSegmentAccounting']['inputRows'],200)
+        self.assertFalse((self.root/'segmented/usgwd-segmented-manifest.json').exists())
+        middle=self.segment(paths,rows=400);self.assertEqual(middle['segments'],1)
+        final=self.segment(paths,rows=400);single=self.run_import(paths,'single',allowance=None)
+        self.assertEqual(final['accounting'],single['accounting']);self.assertEqual(self.segmented_index(),self.index('single'))
+        self.assertEqual(final['accounting']['quarantinedRows'],2)
+    def test_segment_invalid_utf8_version_poisoning_and_reverse_order(self):
+        good=self.rows[0];bad=dict(good,County='INVALID-UTF8-MARKER')
+        filler=[dict(good,**{'Well ID':f'FILLER_{i}'}) for i in range(199)]
+        for n,(first,last) in enumerate(((good,bad),(bad,good))):
+            paths=self.source([first,*filler,last]);paths=self.source(raw=paths[0].read_bytes().replace(b'INVALID-UTF8-MARKER',b'\x81'))
+            out=f'segment-utf8-{n}';self.segment(paths,out);r=self.segment(paths,out)
+            self.assertEqual(r['accounting']['acceptedRecords'],199);self.assertEqual(r['accounting']['quarantinedRows'],2)
+            self.run_import(paths,f'single-utf8-{n}',allowance=None)
+            self.assertEqual(self.segmented_index(out),self.index(f'single-utf8-{n}'))
+        self.assertEqual(self.segmented_index('segment-utf8-0'),self.segmented_index('segment-utf8-1'))
+    def test_segment_tamper_source_change_and_reduce_only_limits_fail_closed(self):
+        rows=[dict(self.rows[0],**{'Well ID':f'BOUND_{i}'}) for i in range(201)]
+        paths=self.source(rows);self.segment(paths)
+        self.segment(paths,rows=0,okay=False);self.segment(paths,rows=125200,okay=False)
+        self.segment(paths,rows=400,okay=False)
+        cp=json.loads((self.root/'segmented/checkpoint-usgwd-segments.json').read_bytes())['payload']
+        ref=cp['segments'][0];m=self.root/'segmented'/ref['directory']/ref['path'];m.write_bytes(m.read_bytes()+b' ')
+        self.segment(paths,okay=False)
+        self.assertFalse((self.root/'segmented/usgwd-segmented-manifest.json').exists())
+        paths[0].write_bytes(paths[0].read_bytes()+b'changed');self.segment(paths,'source-changed',okay=False)
+    def test_segment_global_count_cap_and_anonymous_quarantine(self):
+        rows=[dict(self.rows[0],**{'Well ID':f'LIMIT_{i}'}) for i in range(3201)]
+        paths=self.source(rows)
+        for n in range(16):self.assertEqual(self.segment(paths)['segments'],n+1)
+        result=self.segment(paths,okay=False);self.assertIn(b'sixteen-segment cap',result.stderr)
+        self.assertFalse((self.root/'segmented/usgwd-segmented-manifest.json').exists())
+        rows=[dict(self.rows[0],**{'Well ID':f'ANON_{i}'}) for i in range(201)]
+        rows[-1]=dict(rows[-1],**{'Well ID':'invalid id'})
+        paths=self.source(rows);self.segment(paths,'anonymous');final=self.segment(paths,'anonymous')
+        single=self.run_import(paths,'anonymous-single',allowance=None)
+        self.assertEqual(final['accounting'],single['accounting']);self.assertEqual(final['accounting']['quarantinedRows'],1)
     def test_smoke_retains_nonspatial_state_id_collisions_strings_crs_and_replay(self):
         paths=self.source();result=self.run_import(paths)
         self.assertEqual(result['accounting'],dict(inputRows=2,acceptedRecords=2,identicalDuplicateRows=0,quarantinedRows=0,mapEligibleRecords=1,nonmappedRecords=1))

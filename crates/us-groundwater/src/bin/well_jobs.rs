@@ -500,6 +500,29 @@ fn main() {
 }
 fn cli() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|s| s == "import-usgwd-segmented") {
+        if !(4..=6).contains(&args.len()) {
+            return Err("usage: well-jobs import-usgwd-segmented <csv> <source.json> <directory> [rows-per-segment] [new-partitions]; one new segment per invocation".into());
+        }
+        let rows = args
+            .get(4)
+            .map(|s| s.parse().map_err(|_| "invalid segment rows"))
+            .transpose()?
+            .unwrap_or(125000);
+        let allowance = args
+            .get(5)
+            .map(|s| s.parse().map_err(|_| "invalid partition allowance"))
+            .transpose()?;
+        let result = usgwd::segments::run(
+            Path::new(&args[1]),
+            Path::new(&args[2]),
+            Path::new(&args[3]),
+            rows,
+            allowance,
+        )?;
+        println!("{result}");
+        return Ok(());
+    }
     if args.first().is_some_and(|s| s == "import-usgwd") {
         if !(4..=5).contains(&args.len()) {
             return Err(

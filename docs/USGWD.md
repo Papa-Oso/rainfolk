@@ -59,8 +59,8 @@ including generation/hash overhead, are checked before the shared atomic save.
 Deadline checks guard each finalized ID, index write and metadata save. These are
 cooperative local-I/O deadlines; a single atomic disk operation is not preempted.
 Earlier checkpoints survive budget refusal. Limits do not reset the file's total
-rows/output when resuming. Larger states still require a reviewed, coordinated
-change to input/row/output/metadata/runtime bounds and measured unique-ID memory.
+rows/output when resuming. Larger states use the separate segmented path below;
+the original single-file limits remain unchanged.
 No dependencies were added. CSV quoting supports commas, escaped double quotes,
 embedded newlines, UTF-8/BOM and LF/CRLF. Structurally ambiguous quoting stops the
 stream, retaining earlier checkpoints; row-level UTF-8, width, quantity, ID and
@@ -98,6 +98,50 @@ values retain feet and source references; capacity retains source gallons/minute
 Construction/reported dates retain year precision. Status and potable labels
 remain source assertions, never current activity or verified water safety.
 `snapshotFullyRead` describes only this file; `complete` always remains false.
+
+## Bounded segments of a retained source file
+
+```sh
+crates/us-groundwater/target/debug/well-jobs import-usgwd-segmented saved.csv source.json .temp-gev/usgwd-segments
+```
+
+Each invocation completes at most one new 125,000-row work unit. Repeat the same
+command and directory to continue. It reuses the existing parser, normalizer,
+200-row immutable partitions, exclusive writer lock and atomic checkpoints.
+No derived CSV or replacement source receipt is created: every record retains
+the original whole-file SHA-256 and absolute source row. Whole-file hash checks
+before and after parsing protect the saved byte offset. Actual interrupted work
+replays only the active segment's verified prefix, not every earlier segment.
+
+Each work unit retains the 192 MiB parsed-input, 250,000-row, 2 GiB logical-output,
+1 MiB checkpoint/manifest and 300-second invocation limits. The whole parent CSV
+is bounded separately at 512 MiB for hash verification, with at most 16 segments
+(at most two million source rows). The final reconciliation has its own 2 GiB
+logical-output budget and shares the last invocation's 300-second deadline.
+The maximum referenced state output is therefore 34 GiB; check disk headroom
+before running, retain earlier work on refusal, and use an external watchdog for
+blocking local I/O. Orphan artifacts are not inputs or permission to reset limits.
+An optional rows-per-segment argument can only reduce the default: multiples of
+200 in 200..125000. A following optional 1..100 new-partition allowance permits a
+planned pause inside the active segment. Changing segment size refuses resume.
+
+Segment manifests are `rainfolk-usgwd-segment`, with `segmentFullyRead=true`,
+`slice` byte offsets/absolute row offset and `snapshotFullyRead` true only at
+original-file EOF. Root checkpoints reference their exact bytes/hashes.
+The final `usgwd-segmented-manifest.json` is written only after all segments and
+their row/index artifacts pass validation. Its `segments` reference the individual
+manifests; `idIndexGroups` reference bounded groups of ordinary `idIndex` shards.
+Consumers must use these final global indexes, never sum accepted segment counts
+or concatenate row evidence as unique records. Sorted indexes are merged with
+one bounded shard per segment in memory. Identical IDs/content coalesce across
+all segments; any conflicting or invalid version quarantines all occurrences.
+Anonymous quarantines are counted from row evidence, and every segment and the
+whole file must conserve source rows. Completed replay verifies artifacts and
+leaves the checkpoint and final manifest unchanged.
+
+All source flags, nonspatial retention, immutable release identity and NAD83
+limitations above still apply. EOF is not complete/current state well coverage.
+This is local normalization only: no network, map activation or publication.
 
 ## Refresh contract
 
