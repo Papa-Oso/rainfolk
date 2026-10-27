@@ -28,10 +28,25 @@ file size, manifest checksum) triples from both manifest pages. Retain both page
 and the schema workbook with their hashes. The receipt records operator-supplied
 source evidence; it is not a signature or automatic license verification.
 
-The initial local file is capped at 64 MiB and 250,000 rows, with 60 seconds per
-invocation. Hashing and parsing stream from the local file, with 256 KiB CSV rows,
-4 KiB fields, 200-row partitions, 8 MiB artifacts, 1 GiB output and a bounded
-ID/hash map. Larger state files require an explicit reviewed limit change.
+Local file limits are 192 MiB and 250,000 rows, with 300 seconds per invocation,
+including source rehash, prefix replay and finalization. The 20,000-row synthetic
+benchmark took 16.21 seconds for a full pass and 22.12 seconds over two resumed
+passes, with at most 23.54 MB peak memory. The longer deadline provides bounded
+headroom; it is not proof of full-state runtime or memory. The row cap is retained
+until larger unique-ID measurements justify increasing it. Files exceeding either
+bound stop even when the other allowance remains.
+
+Hashing and parsing stream from the local file, with 256 KiB CSV rows, 4 KiB fields,
+200-row partitions and 8 MiB artifacts. Logical output is capped at 2 GiB, reserving
+1 MiB each for the checkpoint and final manifest. At most 1,250 row partitions and
+1,250 index shards follow from the row cap; a regression checks their maximum
+reference envelopes fit these metadata budgets. Checkpoint and manifest envelopes,
+including generation/hash overhead, are checked before the shared atomic save.
+Deadline checks guard each finalized ID, index write and metadata save. These are
+cooperative local-I/O deadlines; a single atomic disk operation is not preempted.
+Earlier checkpoints survive budget refusal. Limits do not reset the file's total
+rows/output when resuming. Larger states still require a reviewed, coordinated
+change to input/row/output/metadata/runtime bounds and measured unique-ID memory.
 No dependencies were added. CSV quoting supports commas, escaped double quotes,
 embedded newlines, UTF-8/BOM and LF/CRLF. Structurally ambiguous quoting stops the
 stream, retaining earlier checkpoints; row-level UTF-8, width, quantity, ID and
@@ -92,6 +107,12 @@ Checkpoint each diff against a pinned prior snapshot, preserve old versions and
 record added/changed/missing IDs. Missing records never imply plugged wells.
 Sources without a reliable changefeed need periodic complete reconciliation.
 No scheduler or state refresh implementation is included in this milestone.
+
+Rhode Island's baseline is an incomplete digitized sample collected September 6,
+2022. A successful read of that CSV does not establish all current Rhode Island
+wells, and validation of source NAD83 pairs does not make the EPSG:4326 consumer
+ready. Original coordinates and transformation/accuracy provenance must survive
+any later reviewed conversion.
 
 Validation: Rust parser/normalization tests and
 `python -B -m unittest discover -s scripts -p test_capture_usgwd.py` cover synthetic

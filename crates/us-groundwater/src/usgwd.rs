@@ -2,10 +2,41 @@
 use super::*;
 use std::io::{BufRead, BufReader};
 const RESOURCE: &str = "8b02895f02c14dd1a749bcc5584a5c55";
-const INPUT_CAP: u64 = 64 * 1024 * 1024;
+const INPUT_CAP: u64 = 192 * 1024 * 1024;
 const ROW_CAP: usize = 256 * 1024;
 const ROWS: usize = 250_000;
-const OUTPUT_CAP: u64 = 1024 * 1024 * 1024;
+const CHECKPOINT_CAP: usize = MAX_BYTES;
+const MANIFEST_CAP: usize = MAX_BYTES;
+const OUTPUT_CAP: u64 = 2 * 1024 * 1024 * 1024;
+const OUTPUT_RESERVE: u64 = (CHECKPOINT_CAP + MANIFEST_CAP) as u64;
+const RUN_SECONDS: u64 = 300;
+
+fn deadline(started: Instant) -> Result<(), String> {
+    if started.elapsed() >= Duration::from_secs(RUN_SECONDS) {
+        return Err("USGWD invocation time cap; checkpoint retained".into());
+    }
+    Ok(())
+}
+// Match the shared atomic writer's actual envelope, including its generation.
+// Refuse before save so a checkpoint can never exceed the resume reader's cap.
+fn envelope_bytes(payload: &Value) -> Result<usize, String> {
+    let mut next = payload.clone();
+    next["generation"] = json!(next["generation"].as_u64().unwrap_or(0) + 1);
+    Ok(encode(&json!({"schemaVersion":1,"sha256":hash(&encode(&next)?),"payload":next}))?.len())
+}
+fn save_bounded(
+    path: &Path,
+    payload: &mut Value,
+    cap: usize,
+    started: Instant,
+) -> Result<(), String> {
+    deadline(started)?;
+    if envelope_bytes(payload)? > cap {
+        return Err("USGWD checkpoint/manifest byte cap; previous checkpoint retained".into());
+    }
+    deadline(started)?;
+    save(path, payload)
+}
 struct DigestReader {
     file: File,
     sha: Sha256,
@@ -279,11 +310,19 @@ fn source(path: &Path) -> Result<Value, String> {
     }
     Ok(s)
 }
-fn part(dir: &Path, kind: &str, v: &Value, used: &mut u64) -> Result<Value, String> {
+fn part(
+    dir: &Path,
+    kind: &str,
+    v: &Value,
+    used: &mut u64,
+    started: Instant,
+) -> Result<Value, String> {
+    deadline(started)?;
     let bytes = encode(v)?;
-    if bytes.len() > 8 * MAX_BYTES || *used + bytes.len() as u64 > OUTPUT_CAP {
+    if bytes.len() > 8 * MAX_BYTES || *used + bytes.len() as u64 + OUTPUT_RESERVE > OUTPUT_CAP {
         return Err("USGWD artifact/output cap".into());
     }
+    deadline(started)?;
     let name = immutable(dir, kind, &bytes)?;
     *used += bytes.len() as u64;
     Ok(json!({"path":name,"sha256":hash(&bytes),"bytes":bytes.len()}))
@@ -317,9 +356,10 @@ pub(super) fn run(
             break;
         }
         size += n as u64;
-        if size > INPUT_CAP || started.elapsed().as_secs() >= 60 {
-            return Err("CSV input/time cap".into());
+        if size > INPUT_CAP {
+            return Err("CSV input cap".into());
         }
+        deadline(started)?;
         sha.update(&buf[..n]);
     }
     if size != src["inputBytes"].as_u64().unwrap()
@@ -342,7 +382,8 @@ pub(super) fn run(
     lock.try_lock().map_err(|_| "USGWD writer already active")?;
     let cp = dir.join("checkpoint-usgwd.json");
     let prior = if cp.exists() {
-        let e = gev_us_groundwater::texas_sdr::decode_capture_json(&read_capped(&cp, MAX_BYTES)?)?;
+        let e =
+            gev_us_groundwater::texas_sdr::decode_capture_json(&read_capped(&cp, CHECKPOINT_CAP)?)?;
         if e["schemaVersion"] != 1
             || e["sha256"] != hash(&encode(&e["payload"])?)
             || e["payload"]["sourceFingerprint"] != fingerprint
@@ -380,9 +421,7 @@ pub(super) fn run(
         let mut quarantine = Vec::new();
         let first = count + 2;
         for _ in 0..200 {
-            if started.elapsed().as_secs() >= 60 {
-                return Err("USGWD invocation time cap; checkpoint retained".into());
-            }
+            deadline(started)?;
             let Some(raw) = csv_row(&mut reader)? else {
                 break;
             };
@@ -428,15 +467,18 @@ pub(super) fn run(
                 return Err("USGWD saved partition mismatch".into());
             }
             used += bytes.len() as u64;
+            if used + OUTPUT_RESERVE > OUTPUT_CAP {
+                return Err("USGWD replay/output cap".into());
+            }
             expected
         } else {
             new_parts += 1;
-            part(dir, "usgwd-part", &value, &mut used)?
+            part(dir, "usgwd-part", &value, &mut used, started)?
         };
         refs.push(reference);
         if index >= old.len() {
             let mut state = json!({"sourceFingerprint":fingerprint,"partitions":refs,"inputRows":count,"snapshotFullyRead":false,"generation":index});
-            save(&cp, &mut state)?;
+            save_bounded(&cp, &mut state, CHECKPOINT_CAP, started)?;
         }
         if new_parts >= allowance
             && !reader
@@ -461,6 +503,7 @@ pub(super) fn run(
     let mut indices = Vec::new();
     let mut chunk = Vec::new();
     for (id, (digest, n, mapped)) in &reports.ids {
+        deadline(started)?;
         chunk.push(json!({"id":id,"contentSha256":digest,"sourceRows":n,"status":if digest.is_some(){"accepted"}else{"quarantined"},"mapEligible":digest.is_some() && *mapped}));
         if chunk.len() == 200 {
             indices.push(part(
@@ -468,6 +511,7 @@ pub(super) fn run(
                 "usgwd-index",
                 &json!({"schemaVersion":1,"kind":"rainfolk-usgwd-id-index","ids":chunk}),
                 &mut used,
+                started,
             )?);
             chunk.clear();
         }
@@ -478,11 +522,13 @@ pub(super) fn run(
             "usgwd-index",
             &json!({"schemaVersion":1,"kind":"rainfolk-usgwd-id-index","ids":chunk}),
             &mut used,
+            started,
         )?);
     }
     let mut manifest = json!({"schemaVersion":1,"kind":"rainfolk-usgwd-manifest","source":src,"partitions":refs,"idIndex":indices,"accounting":reports.counts(),"spatialSourceRowsBeforeDeduplication":spatial,"complete":false,"snapshotFullyRead":true,"activation":"local-review-only","existingIndexEligible":false});
-    if encode(&manifest)?.len() > MAX_BYTES
-        || used + encode(&manifest)?.len() as u64 + 1024 > OUTPUT_CAP
+    deadline(started)?;
+    if envelope_bytes(&manifest)? > MANIFEST_CAP
+        || used + envelope_bytes(&manifest)? as u64 + CHECKPOINT_CAP as u64 > OUTPUT_CAP
     {
         return Err("USGWD manifest/output cap".into());
     }
@@ -490,7 +536,7 @@ pub(super) fn run(
     if final_path.exists() {
         let previous = gev_us_groundwater::texas_sdr::decode_capture_json(&read_capped(
             &final_path,
-            MAX_BYTES,
+            MANIFEST_CAP,
         )?)?;
         let mut payload = previous["payload"].clone();
         payload
@@ -501,16 +547,69 @@ pub(super) fn run(
             return Err("USGWD completed manifest mismatch".into());
         }
     } else {
-        save(&final_path, &mut manifest)?;
+        save_bounded(&final_path, &mut manifest, MANIFEST_CAP, started)?;
     }
     Ok(
-        json!({"accounting":reports.counts(),"complete":false,"snapshotFullyRead":true,"partitions":refs.len(),"newPartitions":new_parts,"manifestSha256":hash(&read_capped(&final_path,MAX_BYTES)?),"artifactBytes":used,"elapsedSeconds":started.elapsed().as_secs_f64(),"networkRequests":0}),
+        json!({"accounting":reports.counts(),"complete":false,"snapshotFullyRead":true,"partitions":refs.len(),"newPartitions":new_parts,"manifestSha256":hash(&read_capped(&final_path,MANIFEST_CAP)?),"artifactBytes":used,"elapsedSeconds":started.elapsed().as_secs_f64(),"networkRequests":0,
+        "limits":{"inputBytes":INPUT_CAP,"rows":ROWS,"outputBytes":OUTPUT_CAP,"checkpointBytes":CHECKPOINT_CAP,"manifestBytes":MANIFEST_CAP,"invocationSeconds":RUN_SECONDS}}),
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn maximum_reference_counts_fit_readable_checkpoint_and_manifest_budgets() {
+        let reference = json!({"path":"x".repeat(128),"sha256":"f".repeat(64),"bytes":8*MAX_BYTES});
+        let refs = vec![reference; ROWS.div_ceil(200)];
+        let cp = json!({"sourceFingerprint":"f".repeat(64),"partitions":refs,"inputRows":ROWS,"snapshotFullyRead":false,"generation":ROWS.div_ceil(200)});
+        let manifest = json!({"source":"x".repeat(16384),"partitions":refs,"idIndex":refs,"accounting":{"inputRows":ROWS},"complete":false});
+        assert!(envelope_bytes(&cp).unwrap() < CHECKPOINT_CAP);
+        assert!(envelope_bytes(&manifest).unwrap() < MANIFEST_CAP);
+        assert_eq!(OUTPUT_RESERVE, (CHECKPOINT_CAP + MANIFEST_CAP) as u64);
+    }
+    #[test]
+    fn metadata_and_finalization_guards_fail_without_replacing_last_checkpoint() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.temp-gev")
+            .join(format!(
+                "usgwd-budget-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("checkpoint.json");
+        save_bounded(&path, &mut json!({"valid":true}), 256, Instant::now()).unwrap();
+        let good = fs::read(&path).unwrap();
+        assert!(
+            save_bounded(
+                &path,
+                &mut json!({"oversized":"x".repeat(512)}),
+                256,
+                Instant::now()
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&path).unwrap(), good);
+        let expired = Instant::now() - Duration::from_secs(RUN_SECONDS + 1);
+        assert!(save_bounded(&path, &mut json!({"late":true}), 256, expired).is_err());
+        let mut used = 0;
+        assert!(part(&dir, "late-index", &json!({}), &mut used, expired).is_err());
+        assert_eq!(used, 0);
+        assert_eq!(fs::read(&path).unwrap(), good);
+        used = OUTPUT_CAP - OUTPUT_RESERVE;
+        assert!(part(&dir, "full-index", &json!({}), &mut used, Instant::now()).is_err());
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        let scratch = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.temp-gev")
+            .canonicalize()
+            .unwrap();
+        assert!(dir.canonicalize().unwrap().starts_with(scratch));
+        fs::remove_dir_all(&dir).unwrap();
+    }
     #[test]
     fn csv_quotes_multiline_empty_fields_and_truncation() {
         let mut r = std::io::Cursor::new(b"a,\"b,\"\"c\"\"\n\",\r\nlast,,end");

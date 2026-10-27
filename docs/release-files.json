@@ -324,8 +324,8 @@
     },
     {
       "path": "crates/us-groundwater/src/usgwd.rs",
-      "bytes": 21511,
-      "sha256": "bbfb075706d772628c745e4524c0949027ad403b4ca7212001ee74c6656bd6ad"
+      "bytes": 25706,
+      "sha256": "240b8c960f47d12622c2ec77ca4e23a574e62c24e7c6f9132614f554d1d372af"
     },
     {
       "path": "crates/us-groundwater/tests/texas_sdr.rs",
@@ -364,8 +364,8 @@
     },
     {
       "path": "docs/USGWD.md",
-      "bytes": 6553,
-      "sha256": "66eb4a81618e13db1ac99d5a9bca4be693a1768ea78e2b8394ecb3fd1d4d21cc"
+      "bytes": 8028,
+      "sha256": "11585486801ba27a646ab1ae939f49f212e02d4b4d931d60472d640a471257ac"
     },
     {
       "path": "docs/dependencies.json",
@@ -549,8 +549,8 @@
     },
     {
       "path": "scripts/test_capture_usgwd.py",
-      "bytes": 10186,
-      "sha256": "152dfef2a1f52c49026f564a1cca3da10d37479b2684ee203babd08ca073e85e"
+      "bytes": 10502,
+      "sha256": "c0c593640ec923e58d7c73c2aec0eca1d606b04ebe8f927bf325a0bec6cd084f"
     },
     {
       "path": "scripts/usgs-key.ps1",

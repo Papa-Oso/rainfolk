@@ -77,6 +77,10 @@ class UsgwdTests(unittest.TestCase):
         paths=self.source();paths[0].write_bytes(paths[0].read_bytes()+b'changed');self.run_import(paths,okay=False)
         paths=self.source();self.run_import(paths,allowance=0,okay=False)
         paths[1].write_text(paths[1].read_text()[:-1]+',"schemaVersion":1}');self.run_import(paths,okay=False)
+    def test_input_budget_refuses_oversized_receipt_before_output(self):
+        paths=self.source();source=json.loads(paths[1].read_text());source['inputBytes']=192*1024*1024+1
+        paths[1].write_text(json.dumps(source));self.run_import(paths,okay=False)
+        self.assertFalse((self.root/'output').exists())
     def test_invalid_utf8_in_another_field_quarantines_all_id_versions_in_both_orders(self):
         good=self.rows[0];bad=dict(good,County='INVALID-UTF8-MARKER')
         for n,rows in enumerate(([good,bad],[bad,good])):
