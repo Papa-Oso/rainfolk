@@ -1,5 +1,8 @@
 # Rainfolk
 
+The local [USGWD historical baseline importer](docs/USGWD.md) preserves release-scoped
+IDs, NAD83 coordinates and source quality flags, with bounded offline CSV replay.
+
 ### A well-th of information
 
 Rainfolk aims to make public water information easier to find, explore, and trace back to its sources. The planned free public tools include a water-focused interactive map, a source catalog, and research prompts that guide people to original, reliable sources.

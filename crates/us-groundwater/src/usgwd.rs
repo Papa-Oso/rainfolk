@@ -1,0 +1,547 @@
+//! Bounded local USGWD CSV snapshots; no acquisition, scheduler or index activation.
+use super::*;
+use std::io::{BufRead, BufReader};
+const RESOURCE: &str = "8b02895f02c14dd1a749bcc5584a5c55";
+const INPUT_CAP: u64 = 64 * 1024 * 1024;
+const ROW_CAP: usize = 256 * 1024;
+const ROWS: usize = 250_000;
+const OUTPUT_CAP: u64 = 1024 * 1024 * 1024;
+struct DigestReader {
+    file: File,
+    sha: Sha256,
+    bytes: u64,
+}
+impl Read for DigestReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.file.read(buf)?;
+        self.bytes += n as u64;
+        if self.bytes > INPUT_CAP {
+            return Err(std::io::Error::other("CSV input cap"));
+        }
+        self.sha.update(&buf[..n]);
+        Ok(n)
+    }
+}
+const HEADER: [&str; 29] = [
+    "Well ID",
+    "Well ID (State)",
+    "Longitude",
+    "Latitude",
+    "County",
+    "State",
+    "FIPS",
+    "Aquifer-Specific",
+    "Aquifer-Broad",
+    "Subwatershed-HUC12",
+    "Subwatershed-Name",
+    "Location Verified",
+    "Flag County",
+    "Flag State",
+    "Flag US",
+    "Well Depth (Feet)",
+    "Screen Depth (Feet)",
+    "Length of Screen (Feet)",
+    "Well Capacity (GPM)",
+    "Lithological Data",
+    "Surface Elevation (Feet)",
+    "Status",
+    "Year Well was Constructed",
+    "Year Reported",
+    "USGS Water Use Category",
+    "Irrigation Subcategory (State)",
+    "Irrigation Subcategory (Land Use)",
+    "Water Quality (Potable/Non-Potable)",
+    "Flag Duplicate",
+];
+
+// RFC4180 quoting, escaped quotes and embedded newlines. Structural corruption
+// fails the stream: guessing a row boundary could associate data with a wrong ID.
+fn csv_row<R: BufRead>(r: &mut R) -> Result<Option<Vec<Vec<u8>>>, String> {
+    let (mut fields, mut field, mut state, mut size) = (Vec::new(), Vec::new(), 0, 0);
+    loop {
+        let bytes = r.fill_buf().map_err(|_| "CSV read failure")?;
+        if bytes.is_empty() {
+            if state == 1 {
+                return Err("unterminated CSV quote".into());
+            }
+            if size == 0 {
+                return Ok(None);
+            }
+            fields.push(field);
+            return Ok(Some(fields));
+        }
+        let b = bytes[0];
+        r.consume(1);
+        size += 1;
+        if size > ROW_CAP || field.len() > 4096 || fields.len() > HEADER.len() {
+            return Err("CSV row/field cap".into());
+        }
+        if state == 1 {
+            if b == b'"' {
+                state = 2;
+            } else {
+                field.push(b);
+            }
+            continue;
+        }
+        if state == 2 && b == b'"' {
+            field.push(b);
+            state = 1;
+            continue;
+        }
+        match b {
+            b'"' if state == 0 && field.is_empty() => state = 1,
+            b',' => {
+                fields.push(std::mem::take(&mut field));
+                state = 0;
+            }
+            b'\n' | b'\r' => {
+                if b == b'\r' {
+                    if r.fill_buf().map_err(|_| "CSV read failure")?.first() != Some(&b'\n') {
+                        return Err("bare CSV carriage return".into());
+                    }
+                    r.consume(1);
+                }
+                fields.push(field);
+                return Ok(Some(fields));
+            }
+            _ if state == 2 || b == b'"' => return Err("invalid CSV quoting".into()),
+            _ => field.push(b),
+        }
+    }
+}
+fn text(fields: Vec<Vec<u8>>) -> Result<Vec<String>, &'static str> {
+    fields
+        .into_iter()
+        .map(|b| String::from_utf8(b).map_err(|_| "invalid-utf8"))
+        .collect()
+}
+fn hex(v: &Value) -> bool {
+    v.as_str()
+        .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+fn missing(s: &str) -> bool {
+    s.trim().is_empty() || s.trim().eq_ignore_ascii_case("unknown")
+}
+fn native(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 64
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+}
+fn normalized(f: &[String], source: &Value) -> Result<Value, &'static str> {
+    if f.len() != HEADER.len() {
+        return Err("column-count");
+    }
+    if !native(&f[0]) {
+        return Err("invalid-release-well-id");
+    }
+    if f[5] != source["state"].as_str().unwrap() {
+        return Err("state-file-mismatch");
+    }
+    if f.iter().any(|s| s.len() > 4096 || s.contains('\0')) {
+        return Err("invalid-field");
+    }
+    let mut values = serde_json::Map::new();
+    for (k, v) in HEADER.iter().zip(f) {
+        values.insert((*k).into(), json!(v));
+    }
+    let mut quantities = serde_json::Map::new();
+    for (i, unit) in [
+        (15, "ft"),
+        (16, "ft"),
+        (17, "ft"),
+        (18, "gal/min"),
+        (20, "ft"),
+    ] {
+        let n = if missing(&f[i]) {
+            None
+        } else {
+            Some(
+                f[i].trim()
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|n| n.is_finite() && (i == 20 || *n >= 0.0))
+                    .ok_or("invalid-quantity")?,
+            )
+        };
+        quantities.insert(HEADER[i].into(),json!({"value":n.map(|n| if n==0.0 {0.0} else {n}),"unit":unit,"verticalReference":if i==20 {"source-sea-level; datum-unspecified"} else {"source-definition"}}));
+    }
+    let mut years = serde_json::Map::new();
+    for i in [22, 23] {
+        let v = if missing(&f[i]) {
+            Value::Null
+        } else {
+            if f[i].len() != 4 || !f[i].bytes().all(|b| b.is_ascii_digit()) || f[i] == "0000" {
+                return Err("invalid-year");
+            }
+            json!({"year":f[i],"precision":"year","timeZone":null})
+        };
+        years.insert(HEADER[i].into(), v);
+    }
+    let lon = f[2]
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|n| n.is_finite() && (-180.0..=180.0).contains(n));
+    let lat = f[3]
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|n| n.is_finite() && (-90.0..=90.0).contains(n));
+    let spatial = lon.is_some() && lat.is_some();
+    let eligible = spatial && f[13] != "1" && f[14] != "1";
+    Ok(
+        json!({"id":format!("USGWD-{}-{}",source["releaseSha256"].as_str().unwrap(),f[0]),
+        "source":"USGWD","sourceRecordId":f[0],"stateRecordId":if missing(&f[1]) {Value::Null} else {json!(f[1])},
+        "identityScope":"published-release; not stable across releases","sourceSystem":null,
+        "recordType":"historical-well-catalog-record","sourceValues":values,"quantities":quantities,"sourceYears":years,
+        "sourceCoordinates":{"longitude":f[2],"latitude":f[3],"crs":"EPSG:4269","datum":"NAD83","unit":"decimal-degrees"},
+        "longitude":lon,"latitude":lat,"coordinateReference":"EPSG:4269","coordinateAccuracy":"source-quality-flags; no surveyed-wellhead inference",
+        "spatial":spatial,"mapEligible":eligible,"mapEligibilityScope":"requires CRS-aware consumer; no EPSG:4326 conversion applied",
+        "mapSuppressionReason":if !spatial {json!("missing-or-invalid-coordinates")} else if !eligible {json!("source-state-or-US-inconsistency")} else {Value::Null},
+        "existingIndexEligible":false,"existingIndexLimitation":"NAD83 conversion and candidate contract bridge deferred",
+        "fips":f[6],"huc12":f[9],"activeWellStatus":"source-reported; not independently verified","waterSafetyStatus":"not-assessed"}),
+    )
+}
+fn source(path: &Path) -> Result<Value, String> {
+    let s = gev_us_groundwater::texas_sdr::decode_capture_json(&read_capped(path, MAX_BYTES)?)?;
+    let state = s["state"]
+        .as_str()
+        .filter(|s| {
+            !s.is_empty()
+                && s.len() <= 64
+                && s.bytes().all(|b| b.is_ascii_alphabetic() || b == b' ')
+        })
+        .ok_or("invalid state")?;
+    let expected = format!(
+        "https://www.hydroshare.org/resource/{RESOURCE}/data/contents/USGWD-Tabular/USGWD_{}.csv",
+        state.replace(' ', "_")
+    );
+    let allowed = [
+        "schemaVersion",
+        "resourceId",
+        "releaseSha256",
+        "inputSha256",
+        "inputBytes",
+        "state",
+        "sourceUrl",
+        "checkedAt",
+        "sourcePublishedAt",
+        "sourceFileModifiedAt",
+        "sourcePublishedTimeZone",
+        "license",
+        "attribution",
+        "schemaSha256",
+    ];
+    if s.as_object().is_none_or(|o| {
+        o.len() != allowed.len() || o.keys().any(|k| !allowed.contains(&k.as_str()))
+    }) || s["schemaVersion"] != 1
+        || s["resourceId"] != RESOURCE
+        || s["sourceUrl"] != expected
+        || s["license"] != "CC-BY-4.0"
+        || !hex(&s["releaseSha256"])
+        || !hex(&s["inputSha256"])
+        || !hex(&s["schemaSha256"])
+        || s["inputBytes"]
+            .as_u64()
+            .is_none_or(|n| n == 0 || n > INPUT_CAP)
+        || s["checkedAt"]
+            .as_str()
+            .and_then(gev_us_groundwater::time_precision)
+            != Some("instant")
+        || !s["sourcePublishedTimeZone"].is_null()
+        || !s["sourcePublishedAt"].is_null()
+        || s["sourceFileModifiedAt"]
+            .as_str()
+            .is_none_or(|v| v.len() > 64 || v.chars().any(char::is_control))
+        || s["attribution"]
+            .as_str()
+            .is_none_or(|v| v.is_empty() || v.len() > 4096 || v.chars().any(char::is_control))
+    {
+        return Err("invalid USGWD source receipt".into());
+    }
+    Ok(s)
+}
+fn part(dir: &Path, kind: &str, v: &Value, used: &mut u64) -> Result<Value, String> {
+    let bytes = encode(v)?;
+    if bytes.len() > 8 * MAX_BYTES || *used + bytes.len() as u64 > OUTPUT_CAP {
+        return Err("USGWD artifact/output cap".into());
+    }
+    let name = immutable(dir, kind, &bytes)?;
+    *used += bytes.len() as u64;
+    Ok(json!({"path":name,"sha256":hash(&bytes),"bytes":bytes.len()}))
+}
+pub(super) fn run(
+    csv: &Path,
+    receipt: &Path,
+    dir: &Path,
+    allowance: usize,
+) -> Result<Value, String> {
+    let started = Instant::now();
+    if !(1..=100).contains(&allowance) {
+        return Err("new partition allowance must be 1..100".into());
+    }
+    let src = source(receipt)?;
+    let fingerprint = hash(&encode(&src)?);
+    let mut input = File::open(csv).map_err(|_| "CSV open failed")?;
+    if !input
+        .metadata()
+        .map_err(|_| "CSV metadata failed")?
+        .is_file()
+    {
+        return Err("regular CSV required".into());
+    }
+    let mut sha = Sha256::new();
+    let mut size = 0u64;
+    let mut buf = [0u8; 65536];
+    loop {
+        let n = input.read(&mut buf).map_err(|_| "CSV hash read failed")?;
+        if n == 0 {
+            break;
+        }
+        size += n as u64;
+        if size > INPUT_CAP || started.elapsed().as_secs() >= 60 {
+            return Err("CSV input/time cap".into());
+        }
+        sha.update(&buf[..n]);
+    }
+    if size != src["inputBytes"].as_u64().unwrap()
+        || format!("{:x}", sha.finalize()) != src["inputSha256"].as_str().unwrap()
+    {
+        return Err("CSV size/hash mismatch".into());
+    }
+    use std::io::{Seek, SeekFrom};
+    input
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| "CSV rewind failed")?;
+    fs::create_dir_all(dir).map_err(|_| "output directory failed")?;
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(dir.join("usgwd-runner.lock"))
+        .map_err(|_| "writer lock open failed")?;
+    lock.try_lock().map_err(|_| "USGWD writer already active")?;
+    let cp = dir.join("checkpoint-usgwd.json");
+    let prior = if cp.exists() {
+        let e = gev_us_groundwater::texas_sdr::decode_capture_json(&read_capped(&cp, MAX_BYTES)?)?;
+        if e["schemaVersion"] != 1
+            || e["sha256"] != hash(&encode(&e["payload"])?)
+            || e["payload"]["sourceFingerprint"] != fingerprint
+        {
+            return Err("USGWD checkpoint/source mismatch".into());
+        }
+        e["payload"].clone()
+    } else {
+        json!({"sourceFingerprint":fingerprint,"partitions":[],"inputRows":0,"snapshotFullyRead":false})
+    };
+    let old = prior["partitions"]
+        .as_array()
+        .ok_or("checkpoint partition list")?;
+    if old.len() > ROWS.div_ceil(200) {
+        return Err("checkpoint partition cap".into());
+    }
+    let mut reader = BufReader::new(DigestReader {
+        file: input,
+        sha: Sha256::new(),
+        bytes: 0,
+    });
+    let mut header =
+        text(csv_row(&mut reader)?.ok_or("CSV header missing")?).map_err(str::to_owned)?;
+    if let Some(first) = header.first_mut() {
+        *first = first.trim_start_matches('\u{feff}').into();
+    }
+    if header != HEADER {
+        return Err("USGWD schema/header changed".into());
+    }
+    let (mut count, mut used, mut new_parts, mut spatial) = (0usize, 0u64, 0usize, 0u64);
+    let mut reports = sdr_jobs::Reports::default();
+    let mut refs = Vec::new();
+    loop {
+        let mut records = Vec::new();
+        let mut quarantine = Vec::new();
+        let first = count + 2;
+        for _ in 0..200 {
+            if started.elapsed().as_secs() >= 60 {
+                return Err("USGWD invocation time cap; checkpoint retained".into());
+            }
+            let Some(raw) = csv_row(&mut reader)? else {
+                break;
+            };
+            count += 1;
+            if count > ROWS {
+                return Err("USGWD row cap; checkpoint retained".into());
+            }
+            let fields = text(raw);
+            let id = fields
+                .as_ref()
+                .ok()
+                .and_then(|f| f.first())
+                .filter(|s| native(s))
+                .map(|s| format!("USGWD-{}-{s}", src["releaseSha256"].as_str().unwrap()));
+            match fields.and_then(|f| normalized(&f, &src)) {
+                Ok(mut r) => {
+                    let content = hash(&encode(&r)?);
+                    reports.observe(id, Some(content.clone()), r["mapEligible"] == true);
+                    spatial += u64::from(r["spatial"] == true);
+                    r["contentSha256"] = json!(content);
+                    r["provenance"] = json!({"inputSha256":src["inputSha256"],"sourceRow":count+1,"releaseSha256":src["releaseSha256"]});
+                    records.push(r);
+                }
+                Err(reason) => {
+                    reports.observe(id.clone(), None, false);
+                    quarantine.push(json!({"sourceRow":count+1,"sourceId":id,"reason":reason}));
+                }
+            }
+        }
+        if count + 2 == first {
+            break;
+        }
+        let value = json!({"schemaVersion":1,"kind":"rainfolk-usgwd-row-partition","source":src,"firstRow":first,"lastRow":count+1,"records":records,"quarantine":quarantine,"requiresGlobalReconciliation":true});
+        let index = refs.len();
+        let bytes = encode(&value)?;
+        let reference = if index < old.len() {
+            let expected = json!({"path":format!("usgwd-part-{}.json",hash(&bytes)),"sha256":hash(&bytes),"bytes":bytes.len()});
+            if old[index] != expected
+                || read_capped(&dir.join(expected["path"].as_str().unwrap()), 8 * MAX_BYTES)?
+                    != bytes
+            {
+                return Err("USGWD saved partition mismatch".into());
+            }
+            used += bytes.len() as u64;
+            expected
+        } else {
+            new_parts += 1;
+            part(dir, "usgwd-part", &value, &mut used)?
+        };
+        refs.push(reference);
+        if index >= old.len() {
+            let mut state = json!({"sourceFingerprint":fingerprint,"partitions":refs,"inputRows":count,"snapshotFullyRead":false,"generation":index});
+            save(&cp, &mut state)?;
+        }
+        if new_parts >= allowance
+            && !reader
+                .fill_buf()
+                .map_err(|_| "CSV read failure")?
+                .is_empty()
+        {
+            return Ok(
+                json!({"accounting":reports.counts(),"complete":false,"snapshotFullyRead":false,"partitions":refs.len(),"newPartitions":new_parts,"networkRequests":0}),
+            );
+        }
+    }
+    let digest = reader.into_inner();
+    if digest.bytes != size
+        || format!("{:x}", digest.sha.finalize()) != src["inputSha256"].as_str().unwrap()
+    {
+        return Err("CSV changed during processing".into());
+    }
+    if refs.len() < old.len() || (refs.len() == old.len() && prior["inputRows"] != count) {
+        return Err("checkpoint source-row mismatch".into());
+    }
+    let mut indices = Vec::new();
+    let mut chunk = Vec::new();
+    for (id, (digest, n, mapped)) in &reports.ids {
+        chunk.push(json!({"id":id,"contentSha256":digest,"sourceRows":n,"status":if digest.is_some(){"accepted"}else{"quarantined"},"mapEligible":digest.is_some() && *mapped}));
+        if chunk.len() == 200 {
+            indices.push(part(
+                dir,
+                "usgwd-index",
+                &json!({"schemaVersion":1,"kind":"rainfolk-usgwd-id-index","ids":chunk}),
+                &mut used,
+            )?);
+            chunk.clear();
+        }
+    }
+    if !chunk.is_empty() {
+        indices.push(part(
+            dir,
+            "usgwd-index",
+            &json!({"schemaVersion":1,"kind":"rainfolk-usgwd-id-index","ids":chunk}),
+            &mut used,
+        )?);
+    }
+    let mut manifest = json!({"schemaVersion":1,"kind":"rainfolk-usgwd-manifest","source":src,"partitions":refs,"idIndex":indices,"accounting":reports.counts(),"spatialSourceRowsBeforeDeduplication":spatial,"complete":false,"snapshotFullyRead":true,"activation":"local-review-only","existingIndexEligible":false});
+    if encode(&manifest)?.len() > MAX_BYTES
+        || used + encode(&manifest)?.len() as u64 + 1024 > OUTPUT_CAP
+    {
+        return Err("USGWD manifest/output cap".into());
+    }
+    let final_path = dir.join("usgwd-manifest.json");
+    if final_path.exists() {
+        let previous = gev_us_groundwater::texas_sdr::decode_capture_json(&read_capped(
+            &final_path,
+            MAX_BYTES,
+        )?)?;
+        let mut payload = previous["payload"].clone();
+        payload
+            .as_object_mut()
+            .ok_or("invalid manifest")?
+            .remove("generation");
+        if previous["sha256"] != hash(&encode(&previous["payload"])?) || payload != manifest {
+            return Err("USGWD completed manifest mismatch".into());
+        }
+    } else {
+        save(&final_path, &mut manifest)?;
+    }
+    Ok(
+        json!({"accounting":reports.counts(),"complete":false,"snapshotFullyRead":true,"partitions":refs.len(),"newPartitions":new_parts,"manifestSha256":hash(&read_capped(&final_path,MAX_BYTES)?),"artifactBytes":used,"elapsedSeconds":started.elapsed().as_secs_f64(),"networkRequests":0}),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn csv_quotes_multiline_empty_fields_and_truncation() {
+        let mut r = std::io::Cursor::new(b"a,\"b,\"\"c\"\"\n\",\r\nlast,,end");
+        assert_eq!(
+            text(csv_row(&mut r).unwrap().unwrap()).unwrap(),
+            ["a", "b,\"c\"\n", ""]
+        );
+        assert_eq!(
+            text(csv_row(&mut r).unwrap().unwrap()).unwrap(),
+            ["last", "", "end"]
+        );
+        assert!(csv_row(&mut r).unwrap().is_none());
+        for b in [
+            b"\"unterminated".as_slice(),
+            b"a\"bad",
+            b"\"ok\"wrong",
+            b"a\rb",
+        ] {
+            assert!(csv_row(&mut std::io::Cursor::new(b)).is_err());
+        }
+        assert!(csv_row(&mut std::io::Cursor::new(vec![b'a'; ROW_CAP + 1])).is_err());
+    }
+    #[test]
+    fn normalization_keeps_release_identity_crs_strings_flags_and_unknowns() {
+        let mut f = vec![String::new(); 29];
+        f[0] = "NH_1".into();
+        f[5] = "New Hampshire".into();
+        f[6] = "00123".into();
+        f[9] = "000123456789".into();
+        f[11] = "Unknown".into();
+        f[12] = "2".into();
+        f[14] = "0".into();
+        f[28] = "3".into();
+        f[22] = "Unknown".into();
+        let s = json!({"state":"New Hampshire","releaseSha256":"a".repeat(64)});
+        let r = normalized(&f, &s).unwrap();
+        assert_eq!(r["fips"], "00123");
+        assert_eq!(r["huc12"], "000123456789");
+        assert_eq!(r["coordinateReference"], "EPSG:4269");
+        assert_eq!(r["mapEligible"], false);
+        assert!(r["stateRecordId"].is_null());
+        assert!(r["sourceYears"]["Year Well was Constructed"].is_null());
+        assert_eq!(r["sourceValues"]["Flag Duplicate"], "3");
+        f[2] = "-71.5".into();
+        f[3] = "43.2".into();
+        f[15] = "0".into();
+        assert_eq!(normalized(&f, &s).unwrap()["mapEligible"], true);
+        f[15] = "-1".into();
+        assert!(normalized(&f, &s).is_err());
+    }
+}

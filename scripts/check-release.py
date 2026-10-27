@@ -1,6 +1,7 @@
 """Offline candidate integrity and bounded sensitive-content checks; no secret reads."""
 import hashlib
 import json
+import csv
 from pathlib import Path
 import re
 import subprocess
@@ -26,6 +27,12 @@ def main():
     fixture = json.loads((ROOT / sdr_fixture).read_text(encoding='utf-8'))
     assert fixture.get('synthetic') is True and fixture.get('kind') == \
         'rainfolk-texas-sdr-capture', 'SDR release fixture must be synthetic'
+    assert {name for name in listed if name.startswith('fixtures/usgwd/')} == {
+        'fixtures/usgwd/README.md', 'fixtures/usgwd/synthetic.csv',
+    }, 'Unexpected USGWD fixture file'
+    with (ROOT / 'fixtures/usgwd/synthetic.csv').open(encoding='utf-8', newline='') as stream:
+        invented = list(csv.DictReader(stream))
+    assert [r['Well ID'] for r in invented] == ['SYN_1', 'SYN_2'], 'USGWD fixture must contain only the two invented IDs'
     issues = []
     urls = 0
     for row in manifest['files']:

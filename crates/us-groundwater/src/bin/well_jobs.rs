@@ -19,6 +19,8 @@ mod partitions;
 mod sdr_bulk;
 #[path = "../sdr_jobs.rs"]
 mod sdr_jobs;
+#[path = "../usgwd.rs"]
+mod usgwd;
 fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -498,6 +500,30 @@ fn main() {
 }
 fn cli() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|s| s == "import-usgwd") {
+        if !(4..=5).contains(&args.len()) {
+            return Err(
+                "usage: well-jobs import-usgwd <csv> <source.json> <directory> [new-partitions=10]"
+                    .into(),
+            );
+        }
+        let allowance = args
+            .get(4)
+            .map(|s| s.parse::<usize>())
+            .transpose()
+            .map_err(|_| "invalid partition allowance")?
+            .unwrap_or(10);
+        println!(
+            "{}",
+            usgwd::run(
+                Path::new(&args[1]),
+                Path::new(&args[2]),
+                Path::new(&args[3]),
+                allowance
+            )?
+        );
+        return Ok(());
+    }
     if args.first().is_some_and(|s| s == "import-sdr-bulk") {
         if args.len() != 2 {
             return Err(

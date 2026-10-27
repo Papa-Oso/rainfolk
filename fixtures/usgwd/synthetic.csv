@@ -1,0 +1,3 @@
+Well ID,Well ID (State),Longitude,Latitude,County,State,FIPS,Aquifer-Specific,Aquifer-Broad,Subwatershed-HUC12,Subwatershed-Name,Location Verified,Flag County,Flag State,Flag US,Well Depth (Feet),Screen Depth (Feet),Length of Screen (Feet),Well Capacity (GPM),Lithological Data,Surface Elevation (Feet),Status,Year Well was Constructed,Year Reported,USGS Water Use Category,Irrigation Subcategory (State),Irrigation Subcategory (Land Use),Water Quality (Potable/Non-Potable),Flag Duplicate
+SYN_1,invented-shared-state-id,-71.5,43.2,,New Hampshire,00001,,,000000000001,,Unknown,2,0,0,0,,,,,,,,Unknown,,,,,3
+SYN_2,invented-shared-state-id,,,,New Hampshire,00001,,,000000000001,,Unknown,2,0,0,0,,,,,,,,Unknown,,,,,3

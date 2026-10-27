@@ -249,8 +249,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 9742,
-      "sha256": "e295ec31109bf1279dea6748fea52abb771083603e347d41d82c5b7c1e90d2d7"
+      "bytes": 9912,
+      "sha256": "1d0ff6bf71012605e41ed003add8f5482847e026b4c4439f610450f0a6580d48"
     },
     {
       "path": "SECURITY.md",
@@ -274,8 +274,8 @@
     },
     {
       "path": "crates/us-groundwater/src/bin/well_jobs.rs",
-      "bytes": 33824,
-      "sha256": "317fda8d1f0b52ec722effc9ada11c2bf24b210a0a170206d85daa1ed54ee7dd"
+      "bytes": 34592,
+      "sha256": "90aca9c697d91432d95be545ad981157e837734166c9a9de2c93849ba257d433"
     },
     {
       "path": "crates/us-groundwater/src/job_migration.rs",
@@ -323,6 +323,11 @@
       "sha256": "8b71a34b2dc256fe52e372c7e8a257e0e7806cd9bc49642d211c65e4b9b55a6f"
     },
     {
+      "path": "crates/us-groundwater/src/usgwd.rs",
+      "bytes": 20685,
+      "sha256": "625bc3a70476e1c67a5686ef0916a285211b6f9df151e0760695942bfc061307"
+    },
+    {
       "path": "crates/us-groundwater/tests/texas_sdr.rs",
       "bytes": 29910,
       "sha256": "7927e11b1e724901ad62a3f183f044428f9847775cc2e11ff2b7ba7b85c1debf"
@@ -356,6 +361,11 @@
       "path": "docs/TEXAS_SDR_BULK.md",
       "bytes": 4155,
       "sha256": "59b8cb05753e4991d5a00acf06a54f25305749384a5ff0f935558fe77a190370"
+    },
+    {
+      "path": "docs/USGWD.md",
+      "bytes": 5664,
+      "sha256": "ea75ff7b37c5cdd281607c5bfc40a56b4398cfd7349e572b9b7ba110a7b2fc89"
     },
     {
       "path": "docs/dependencies.json",
@@ -488,6 +498,16 @@
       "sha256": "fd6733503bfcddfdd6fb294e8ec7da9c4dc5661873bd7f3db4d3a0eb65328b79"
     },
     {
+      "path": "fixtures/usgwd/README.md",
+      "bytes": 504,
+      "sha256": "8f222a6f8a452d1afdbb733296d3a6957234d37bea90e0a3f084a68c3ac5b6e5"
+    },
+    {
+      "path": "fixtures/usgwd/synthetic.csv",
+      "bytes": 713,
+      "sha256": "b1604357f16b99ffd02dfa09faa4d9ca36fabbd2aeab231af46827711b477198"
+    },
+    {
       "path": "scripts/capture-texas-sdr-bulk.py",
       "bytes": 8998,
       "sha256": "522835292caddda70e26aa5ac743ebc1735c5094e6be8fe6cb3f788f0726f19c"
@@ -504,8 +524,8 @@
     },
     {
       "path": "scripts/check-release.py",
-      "bytes": 4588,
-      "sha256": "8a46ebb04396231a387d090a86b7df60d2665d1c9829be3eed11e0706df731c6"
+      "bytes": 5051,
+      "sha256": "718fa1a50789c035cceef039057aca38efadffb25de788cb04375b16da705718"
     },
     {
       "path": "scripts/test-usgs-key-path.ps1",
@@ -526,6 +546,11 @@
       "path": "scripts/test_capture_usgs_inventory.py",
       "bytes": 17761,
       "sha256": "75d539940b93009c67a2bbe368095a758cc9d546b2bdaf0bb600a0600653eab9"
+    },
+    {
+      "path": "scripts/test_capture_usgwd.py",
+      "bytes": 6691,
+      "sha256": "91e10dbfc719b1595d793732d7085f5d44d296e9cc1adf30a3ff513bfa51e07a"
     },
     {
       "path": "scripts/usgs-key.ps1",
