@@ -274,8 +274,8 @@
     },
     {
       "path": "crates/us-groundwater/src/bin/well_jobs.rs",
-      "bytes": 31149,
-      "sha256": "7adff7fb52b832d6ab255b771eb721c02020810000f85f6deec0055cb7b2d904"
+      "bytes": 33824,
+      "sha256": "317fda8d1f0b52ec722effc9ada11c2bf24b210a0a170206d85daa1ed54ee7dd"
     },
     {
       "path": "crates/us-groundwater/src/job_migration.rs",
@@ -308,14 +308,24 @@
       "sha256": "c783527357c08da73ff67078ff6e10e38651c7b906bc6cc9530a14798ea47b12"
     },
     {
+      "path": "crates/us-groundwater/src/sdr_bulk.rs",
+      "bytes": 10285,
+      "sha256": "fb465396ecf70f825a4695b5da417dee2467bef2a7638adcf39d6bcf0a1401e8"
+    },
+    {
+      "path": "crates/us-groundwater/src/sdr_jobs.rs",
+      "bytes": 29586,
+      "sha256": "e08fdd5ce80cf3f8731d09b64f01ec03d6c4489b0d7a02de20708b895af8a012"
+    },
+    {
       "path": "crates/us-groundwater/src/texas_sdr.rs",
-      "bytes": 18842,
-      "sha256": "15ca4348e5179e046f45512ece51d6146bbe513bb66d5f240240587f8bde737e"
+      "bytes": 26305,
+      "sha256": "8b71a34b2dc256fe52e372c7e8a257e0e7806cd9bc49642d211c65e4b9b55a6f"
     },
     {
       "path": "crates/us-groundwater/tests/texas_sdr.rs",
-      "bytes": 22895,
-      "sha256": "e2f0df23eda07cc4b9f81691f42aeab3e6f6a5c0f8fb34d0939f833467d836b6"
+      "bytes": 29910,
+      "sha256": "7927e11b1e724901ad62a3f183f044428f9847775cc2e11ff2b7ba7b85c1debf"
     },
     {
       "path": "docs/ARTIFACT_CONTRACT.md",
@@ -339,8 +349,13 @@
     },
     {
       "path": "docs/TEXAS_SDR.md",
-      "bytes": 21100,
-      "sha256": "66ed3c47f24c1d0aee67abac124a7515f6d3a0518efae552dc4d28c062c71628"
+      "bytes": 27501,
+      "sha256": "6929affb4bcfeff8215652277841c461e412d584fcf0614a486b7e853a4554c0"
+    },
+    {
+      "path": "docs/TEXAS_SDR_BULK.md",
+      "bytes": 4155,
+      "sha256": "59b8cb05753e4991d5a00acf06a54f25305749384a5ff0f935558fe77a190370"
     },
     {
       "path": "docs/dependencies.json",
@@ -359,8 +374,8 @@
     },
     {
       "path": "examples/texas_sdr_offline.py",
-      "bytes": 2282,
-      "sha256": "6e1283bc43572c66037de0df95f09b18ba096e100abe9bec1660b1045a4e47f8"
+      "bytes": 5494,
+      "sha256": "e4e55ff92dd7ff73f6e69b347bdb5b3eba04692911bf4cede389006d26d82e11"
     },
     {
       "path": "fixtures/texas-sdr/README.md",
@@ -473,9 +488,14 @@
       "sha256": "fd6733503bfcddfdd6fb294e8ec7da9c4dc5661873bd7f3db4d3a0eb65328b79"
     },
     {
+      "path": "scripts/capture-texas-sdr-bulk.py",
+      "bytes": 8998,
+      "sha256": "522835292caddda70e26aa5ac743ebc1735c5094e6be8fe6cb3f788f0726f19c"
+    },
+    {
       "path": "scripts/capture-texas-sdr.py",
-      "bytes": 24223,
-      "sha256": "fc355ea25a8abb81d64fb5d727587fb4291f8223a3c55c358e683b424bff45eb"
+      "bytes": 31747,
+      "sha256": "bd6629911f3169d33f56b5face4eca6c615a97aa11aa793004984c27377ab060"
     },
     {
       "path": "scripts/capture-usgs-inventory.py",
@@ -494,8 +514,13 @@
     },
     {
       "path": "scripts/test_capture_texas_sdr.py",
-      "bytes": 15603,
-      "sha256": "85922c15f7d3b4e52a4aa140271396637631719b9d14da0ff9d86bb2fb18ee76"
+      "bytes": 26138,
+      "sha256": "aac6baae776eb92b6a41792b4092c2de7751c223a3fe485681449527e4205a01"
+    },
+    {
+      "path": "scripts/test_capture_texas_sdr_bulk.py",
+      "bytes": 7971,
+      "sha256": "647a5d80606adbc76c0dba1250bfe6b535b29d5fc15ac1041dce2e8152969ae7"
     },
     {
       "path": "scripts/test_capture_usgs_inventory.py",

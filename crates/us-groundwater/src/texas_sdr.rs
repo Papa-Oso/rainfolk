@@ -9,6 +9,22 @@ pub const SOURCE: &str =
     "https://services.twdb.texas.gov/arcgis/rest/services/Public/WellReports/FeatureServer/0";
 pub const MAX_ROWS: usize = 200;
 pub const MAX_BYTES: usize = 1024 * 1024;
+pub const BULK_SOURCE: &str = "https://www.twdb.texas.gov/groundwater/data/SDRDownload.zip";
+pub const BULK_FIELDS: [&str; 13] = [
+    "WellReportTrackingNumber",
+    "ProposedUse",
+    "CoordDDLat",
+    "CoordDDLong",
+    "DateSubmitted",
+    "DrillingStartDate",
+    "DrillingEndDate",
+    "KnownLocationError",
+    "HorizontalDatumType",
+    "LocationVerifiedByDriller",
+    "TypeOfWork",
+    "OriginalWellReportTrackingNumber",
+    "NumberOfWellsDrilled",
+];
 pub const FIELDS: [&str; 7] = [
     "WellReportTrackingNumber",
     "ProposedUse",
@@ -27,10 +43,69 @@ pub fn public_query_url() -> String {
     )
 }
 
-/// Admit only the original pilot or a fixed one-row whitelist projection.
+/// Fixed first page omitting the date field that failed in the retained public pilot.
+pub fn public_batch_query_url() -> String {
+    let fields: Vec<_> = FIELDS
+        .iter()
+        .copied()
+        .filter(|field| *field != "DateOfWellCompletion")
+        .collect();
+    format!(
+        "{SOURCE}/query?f=pjson&where=1%3D1&outFields={}&returnGeometry=false&orderByFields=ObjectId%20ASC&resultRecordCount=200&resultOffset=0",
+        fields.join("%2C")
+    )
+}
+
+/// Keyset page on the source's non-null OID. OIDs are paging metadata, not well IDs.
+pub fn public_job_query_url(after: u64, limit: usize) -> Result<String, String> {
+    if after > i32::MAX as u64 || !(1..=MAX_ROWS).contains(&limit) {
+        return Err("invalid SDR keyset bounds".into());
+    }
+    let mut fields: Vec<_> = FIELDS
+        .iter()
+        .copied()
+        .filter(|f| *f != "DateOfWellCompletion")
+        .collect();
+    fields.push("ObjectId");
+    Ok(format!(
+        "{SOURCE}/query?f=pjson&where=ObjectId%3E{after}&outFields={}&returnGeometry=false&orderByFields=ObjectId%20ASC&resultRecordCount={limit}",
+        fields.join("%2C")
+    ))
+}
+
+pub fn job_projection(url: &str) -> Option<(u64, usize)> {
+    let tail = url.strip_prefix(&format!("{SOURCE}/query?f=pjson&where=ObjectId%3E"))?;
+    let (after, _) = tail.split_once("&outFields=")?;
+    let after = after.parse::<u64>().ok()?;
+    let (_, limit) = tail.rsplit_once("&resultRecordCount=")?;
+    let limit = limit.parse::<usize>().ok()?;
+    (public_job_query_url(after, limit).ok()? == url).then_some((after, limit))
+}
+
+/// Admit only fixed first pages, strict keyset pages or a one-row projection.
 fn public_projection(url: &str) -> Option<(Vec<&'static str>, usize)> {
     if url == public_query_url() {
         return Some((FIELDS.to_vec(), MAX_ROWS));
+    }
+    if url == public_batch_query_url() {
+        return Some((
+            FIELDS
+                .iter()
+                .copied()
+                .filter(|field| *field != "DateOfWellCompletion")
+                .collect(),
+            MAX_ROWS,
+        ));
+    }
+    if let Some((_, limit)) = job_projection(url) {
+        return Some((
+            FIELDS
+                .iter()
+                .copied()
+                .filter(|f| *f != "DateOfWellCompletion")
+                .collect(),
+            limit,
+        ));
     }
     if url.len() > 1024 {
         return None;
@@ -214,17 +289,99 @@ fn record(attributes: &Value) -> Result<Value, &'static str> {
     }))
 }
 
+/// Bulk has its own source fields/semantics; reuse report/number/coordinate validation,
+/// without pretending a pipe export is an ArcGIS response or guessing a datum/date zone.
+pub fn bulk_record(values: &Value) -> Result<Value, &'static str> {
+    only_keys(values, &BULK_FIELDS).map_err(|_| "bulk-field-projection")?;
+    if values.as_object().unwrap().len() != BULK_FIELDS.len()
+        || BULK_FIELDS.iter().any(|k| {
+            values[k]
+                .as_str()
+                .is_none_or(|s| s.len() > 1024 || s.chars().any(char::is_control))
+        })
+    {
+        return Err("invalid-bulk-field");
+    }
+    let numeric = |key: &str| -> Result<Value, &'static str> {
+        let s = values[key].as_str().unwrap().trim();
+        if s.is_empty() {
+            return Ok(Value::Null);
+        }
+        let n = s.parse::<f64>().map_err(|_| "invalid-number")?;
+        serde_json::Number::from_f64(n)
+            .map(Value::Number)
+            .ok_or("invalid-number")
+    };
+    let mut output = record(
+        &json!({"WellReportTrackingNumber":values["WellReportTrackingNumber"],
+        "ProposedUse":values["ProposedUse"],"LatitudeDD":numeric("CoordDDLat")?,"LongitudeDD":numeric("CoordDDLong")?,
+        "BoreholeDepthFt":null,"LocationError":null,"DateOfWellCompletion":null}),
+    )?;
+    let mut dates = serde_json::Map::new();
+    for field in ["DateSubmitted", "DrillingStartDate", "DrillingEndDate"] {
+        let raw = values[field].as_str().unwrap();
+        let parsed = if raw.is_empty() {
+            Value::Null
+        } else {
+            if super::time_precision(raw) != Some("day") {
+                return Err("invalid-bulk-calendar-date");
+            }
+            json!({"date":raw,"precision":"day","timeZone":null})
+        };
+        dates.insert(field.into(), parsed);
+    }
+    let datum = values["HorizontalDatumType"]
+        .as_str()
+        .unwrap()
+        .trim()
+        .to_ascii_uppercase();
+    output["serviceCoordinateReference"] = Value::Null;
+    output["sourceCoordinates"] = json!({"latitude":values["CoordDDLat"],"longitude":values["CoordDDLong"],
+        "horizontalDatum":values["HorizontalDatumType"],"unit":"decimal-degrees"});
+    if output["mapEligible"] == true && datum != "WGS84" {
+        output["mapEligible"] = json!(false);
+        output["latitude"] = Value::Null;
+        output["longitude"] = Value::Null;
+        output["mapSuppressionReason"] = json!(if datum.is_empty() {
+            "source-datum-missing"
+        } else if ["NAD27", "NAD83"].contains(&datum.as_str()) {
+            "datum-conversion-not-applied"
+        } else {
+            "unsupported-source-datum"
+        });
+        output["coordinateQuality"] = output["mapSuppressionReason"].clone();
+    }
+    output["coordinateReference"] = if output["mapEligible"] == true {
+        json!("EPSG:4326")
+    } else {
+        Value::Null
+    };
+    output["sourceDates"] = json!(dates);
+    output["bulkSourceValues"] = values.clone();
+    output["knownLocationError"] = values["KnownLocationError"].clone();
+    output["locationQualityWarning"] = json!(
+        "source-datum-and-quality-retained; coordinates-unverified; bulk text flag is not an API integer code"
+    );
+    output["boreholeDepth"] =
+        json!({"value":null,"unit":"ft","status":"not-derived-from-core-table"});
+    Ok(output)
+}
+
 /// Normalize one bounded synthetic or explicitly public ArcGIS-shaped response. Invalid rows are quarantined;
 /// malformed envelopes, privacy/schema surprises and limits refuse the entire capture.
 /// `synthetic` is an operator assertion, not an authenticity or rights attestation.
-pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
+pub fn decode_capture_json(bytes: &[u8]) -> Result<Value, String> {
     if bytes.len() > MAX_BYTES {
         return Err("SDR input byte limit".into());
     }
     // Do not include serde's source excerpts (which may contain unexpected private data).
     serde_json::from_slice::<UniqueMembers>(bytes)
         .map_err(|_| "invalid SDR JSON or duplicate member")?;
-    let input: Value = serde_json::from_slice(bytes).map_err(|_| "invalid SDR JSON")?;
+    serde_json::from_slice(bytes).map_err(|_| "invalid SDR JSON".into())
+}
+
+pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
+    let input = decode_capture_json(bytes)?;
     let public = input["kind"] == "rainfolk-texas-sdr-public-capture";
     only_keys(
         &input,
@@ -241,6 +398,7 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
                 "sourceSchemaSha256",
                 "fieldLimitations",
                 "fieldLimitationsEvidenceSha256",
+                "pagination",
             ]
         } else {
             &[
@@ -277,6 +435,13 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     } else {
         None
     };
+    let job = input["queryUrl"].as_str().and_then(job_projection);
+    if public
+        && (input["queryUrl"] == public_batch_query_url() || job.is_some())
+        && input["fieldLimitations"] != json!({"DateOfWellCompletion":"source-query-api-400"})
+    {
+        return Err("SDR batch requires date-omission limitation provenance".into());
+    }
     if let Some(limitations) = input.get("fieldLimitations") {
         only_keys(limitations, &FIELDS)?;
         let (selected, _) = projection
@@ -340,6 +505,28 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
         .is_some_and(|(_, limit)| rows.len() > *limit)
     {
         return Err("SDR capture exceeds declared query row limit".into());
+    }
+    if let Some((after, _)) = job {
+        only_keys(&input["pagination"], &["afterObjectId", "objectIds"])?;
+        let ids = input["pagination"]["objectIds"]
+            .as_array()
+            .ok_or("SDR paging OIDs required")?;
+        if input["pagination"]["afterObjectId"].as_u64() != Some(after) || ids.len() != rows.len() {
+            return Err("SDR paging provenance mismatch".into());
+        }
+        let mut previous = after;
+        for id in ids {
+            let id = id
+                .as_u64()
+                .filter(|n| *n > previous && *n <= i32::MAX as u64)
+                .ok_or("SDR paging OIDs not strictly increasing")?;
+            previous = id;
+        }
+        if ids.is_empty() && response["exceededTransferLimit"] == true {
+            return Err("SDR paging made no progress".into());
+        }
+    } else if input.get("pagination").is_some() {
+        return Err("SDR pagination requires exact keyset query".into());
     }
     // Projection is enforced before any row normalization, including rejected rows.
     for row in rows {
@@ -422,7 +609,7 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     }
     quarantine.sort_by_key(|q| q["rowIndex"].as_u64().unwrap());
     let mapped = records.iter().filter(|r| r["mapEligible"] == true).count();
-    let payload = json!({"schemaVersion":1,"kind":"rainfolk-texas-sdr-construction-records",
+    let mut payload = json!({"schemaVersion":1,"kind":"rainfolk-texas-sdr-construction-records",
         "synthetic":!public,"records":records,"quarantine":quarantine,
         "coverage":{"complete":false,"stateCode":"48","observations":"not-requested",
             "exceededTransferLimit":response["exceededTransferLimit"],
@@ -430,6 +617,9 @@ pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
         "accounting":{"inputRows":rows.len(),"acceptedRecords":records.len(),
             "identicalDuplicateRows":duplicates,"quarantinedRows":quarantine.len(),
             "mapEligibleRecords":mapped,"nonmappedRecords":records.len()-mapped}});
+    if job.is_some() {
+        payload["pagination"] = input["pagination"].clone();
+    }
     let manifest = json!({"schemaVersion":1,"kind":"rainfolk-texas-sdr-manifest",
         "artifactEncoding":"serde-json-compact-sorted-keys-v1",
         "input":{"bytes":bytes.len(),"sha256":input_hash},

@@ -22,6 +22,10 @@ FIELDS = ('WellReportTrackingNumber', 'ProposedUse', 'LatitudeDD', 'LongitudeDD'
 QUERY = (SOURCE + '/query?f=json&where=1%3D1&outFields=' + '%2C'.join(FIELDS)
          + '&returnGeometry=false&orderByFields=WellReportTrackingNumber'
          + '&resultRecordCount=200&resultOffset=0')
+BATCH_FIELDS = tuple(field for field in FIELDS if field != 'DateOfWellCompletion')
+BATCH_QUERY = (SOURCE + '/query?f=pjson&where=1%3D1&outFields=' + '%2C'.join(BATCH_FIELDS)
+               + '&returnGeometry=false&orderByFields=ObjectId%20ASC'
+               + '&resultRecordCount=200&resultOffset=0')
 SCHEMA_URL = SOURCE + '?f=pjson'
 PAGE_BYTES = 512 * 1024
 TOTAL_BYTES = 1024 * 1024
@@ -32,6 +36,8 @@ TYPES = dict(zip(FIELDS, ('esriFieldTypeString', 'esriFieldTypeString',
     'esriFieldTypeDouble', 'esriFieldTypeSmallInteger')))
 
 GUARD_MESSAGES = {
+    'pagination-contract': 'invalid bounded ObjectId pagination contract',
+    'limitation-evidence': 'date omission requires a 64-digit hexadecimal evidence SHA-256',
     'worker-failure': 'HTTP worker failed; diagnostics omitted',
     'capture-budget': 'capture byte/time budget exhausted',
     'response-crs': 'contradictory or unsupported response CRS; no rewriting',
@@ -139,12 +145,22 @@ def source_failure(value, phase):
     return SourceFailure(phase, error.get('code'), error.get('message'), error.get('details'))
 
 
-def query_url(phase='query', limit=200, fields=None):
+def query_url(phase='query', limit=200, fields=None, after_object_id=None):
     """Fixed diagnostic variants on the same layer query; never arbitrary SQL/fields."""
     if type(limit) is not int or not 1 <= limit <= 200:
         raise GuardFailure('query-row-budget')
     if phase == 'schema':
         return SCHEMA_URL
+    if phase == 'job-page':
+        if fields is not None or type(after_object_id) is not int or not 0 <= after_object_id <= 2147483647:
+            raise GuardFailure('pagination-contract')
+        return (SOURCE + '/query?f=pjson&where=ObjectId%3E' + str(after_object_id)
+                + '&outFields=' + '%2C'.join((*BATCH_FIELDS, 'ObjectId'))
+                + '&returnGeometry=false&orderByFields=ObjectId%20ASC&resultRecordCount=' + str(limit))
+    if phase == 'batch-without-date':
+        if limit != 200 or fields is not None:
+            raise GuardFailure('query-row-budget')
+        return BATCH_QUERY
     if phase == 'query':
         if limit != 200:
             raise GuardFailure('fixed-query-row-limit')
@@ -193,9 +209,9 @@ def request_worker(command, remaining):
     return result.stdout
 
 
-def http_worker(phase, limit=200, fields=None):
+def http_worker(phase, limit=200, fields=None, after_object_id=None):
     # Private CLI mode accepts fixed phase names, never arbitrary URLs/hosts.
-    url = query_url(phase, limit, fields)
+    url = query_url(phase, limit, fields, after_object_id)
     request = urllib.request.Request(url, headers={
         'Accept': 'application/json', 'User-Agent': 'Rainfolk-bounded-SDR-sample/1',
         'Accept-Encoding': 'identity'})
@@ -252,7 +268,7 @@ def audit_encoded(value):
     return (json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode()
 
 
-def schema_check(schema):
+def schema_check(schema, ordered_batch=False):
     if not isinstance(schema, dict):
         raise GuardFailure('schema-root-shape')
     if 'error' in schema:
@@ -274,9 +290,17 @@ def schema_check(schema):
             or not schema.get('advancedQueryCapabilities', {}).get('supportsOrderBy')
             or schema.get('maxRecordCount', 0) < 200):
         raise GuardFailure('schema-contract')
+    if ordered_batch and (schema.get('objectIdField') != 'ObjectId'
+            or indexed.get('ObjectId', {}).get('type') != 'esriFieldTypeOID'
+            or indexed.get('ObjectId', {}).get('nullable') is not False
+            or schema['advancedQueryCapabilities'].get('supportsOrderBy') is not True
+            or schema['advancedQueryCapabilities'].get('supportsPagination') is not True):
+        raise GuardFailure('schema-contract')
 
 
-def sanitize(response, schema=None):
+def sanitize(response, schema=None, requested_fields=FIELDS):
+    if requested_fields not in (FIELDS, BATCH_FIELDS):
+        raise GuardFailure('projection-fields')
     if not isinstance(response, dict):
         raise GuardFailure('response-root-shape')
     if 'error' in response:
@@ -288,7 +312,7 @@ def sanitize(response, schema=None):
     response_fields = response.get('fields', [])
     if not isinstance(response_fields, list):
         raise GuardFailure('response-fields-shape')
-    if any(not isinstance(f, dict) or not isinstance(f.get('name'), str) or f.get('name') not in set(FIELDS) | {'ObjectId'}
+    if any(not isinstance(f, dict) or not isinstance(f.get('name'), str) or f.get('name') not in set(requested_fields) | {'ObjectId'}
            for f in response_fields):
         raise GuardFailure('response-field-projection')
     supplied_crs = response.get('spatialReference')
@@ -308,15 +332,15 @@ def sanitize(response, schema=None):
         if not isinstance(row, dict) or set(row) - {'attributes', 'geometry'} or row.get('geometry') is not None:
             raise GuardFailure('feature-shape')
         attributes = row.get('attributes')
-        # Some ArcGIS servers include an OID automatically. Keep only the seven
+        # Some ArcGIS servers include an OID automatically. Keep only the selected
         # requested fields; no other unrequested attribute may be saved.
-        if not isinstance(attributes, dict) or set(attributes) - set(FIELDS) - {'ObjectId'}:
+        if not isinstance(attributes, dict) or set(attributes) - set(requested_fields) - {'ObjectId'}:
             raise GuardFailure('attribute-projection')
         if 'ObjectId' in attributes:
             if type(attributes['ObjectId']) is not int:
                 raise GuardFailure('source-oid-type')
             dropped_oids += 1
-        cleaned.append({'attributes': {k: attributes[k] for k in FIELDS if k in attributes}})
+        cleaned.append({'attributes': {k: attributes[k] for k in requested_fields if k in attributes}})
     flag = response.get('exceededTransferLimit', False)
     if type(flag) is not bool:
         raise GuardFailure('transfer-limit-type')
@@ -324,29 +348,37 @@ def sanitize(response, schema=None):
                 features=cleaned), dropped_oids
 
 
-def _capture(directory, opener=None, pause=time.sleep, clock=time.monotonic, context=None):
+def _capture(directory, opener=None, pause=time.sleep, clock=time.monotonic, context=None,
+             date_omission_evidence_sha256=None, after_object_id=None, record_limit=200, max_seconds=60):
     destination = Path(directory)
     if destination.exists():
         raise GuardFailure('output-exists')
     started = clock()
     total, requests = 0, 0
+    query = (query_url('job-page', record_limit, after_object_id=after_object_id) if after_object_id is not None
+             else BATCH_QUERY if date_omission_evidence_sha256 is not None else QUERY)
 
     def read(url):
         nonlocal total, requests
-        remaining = TIME_LIMIT - (clock() - started)
+        remaining = max_seconds - (clock() - started)
         if requests >= 2 or remaining <= 0:
             raise GuardFailure('request-time-budget')
         requests += 1
         context['networkRequests'] = requests
-        event = dict(url=url, phase='schema' if url == SCHEMA_URL else 'query',
+        phase = ('schema' if url == SCHEMA_URL else
+                 'job-page' if after_object_id is not None else
+                 'batch-without-date' if url == BATCH_QUERY else 'query')
+        event = dict(url=url, phase=phase,
                      requestedAt=datetime.now(timezone.utc).isoformat())
         context['requests'].append(event)
         if opener is None:
             # The parent enforces the remaining whole-capture deadline around
             # a disposable HTTP process, so slow trickle cannot reset the budget.
             try:
-                raw = request_worker([sys.executable, '-B', str(Path(__file__).resolve()),
-                    '--_http-phase', event['phase']], remaining)
+                command = [sys.executable, '-B', str(Path(__file__).resolve()), '--_http-phase', event['phase']]
+                if phase == 'job-page':
+                    command += ['--after-object-id', str(after_object_id), '--_record-limit', str(record_limit)]
+                raw = request_worker(command, remaining)
             except SourceFailure as error:
                 if error.info['httpError']:
                     event['httpStatus'] = error.info['code']
@@ -369,7 +401,7 @@ def _capture(directory, opener=None, pause=time.sleep, clock=time.monotonic, con
                 event['httpStatus'] = response.status
                 chunks, size = [], 0
                 while True:
-                    if clock() - started >= TIME_LIMIT:
+                    if clock() - started >= max_seconds:
                         raise GuardFailure('elapsed-time-budget')
                     chunk = response.read(min(65536, PAGE_BYTES - size + 1,
                                               TOTAL_BYTES - total + 1))
@@ -392,23 +424,50 @@ def _capture(directory, opener=None, pause=time.sleep, clock=time.monotonic, con
 
     schema_raw = read(SCHEMA_URL)
     schema = decode(schema_raw)
-    schema_check(schema)
+    schema_check(schema, ordered_batch=date_omission_evidence_sha256 is not None)
+    if after_object_id is not None and schema['advancedQueryCapabilities'].get('supportsSqlExpression') is not True:
+        raise GuardFailure('schema-contract')
     context['schemaRaw'] = schema_raw
     pause(1)
-    raw = read(QUERY)
-    response, dropped_oids = sanitize(decode(raw), schema)
+    raw = read(query)
+    decoded = decode(raw)
+    pagination = None
+    if after_object_id is not None and (not isinstance(decoded, dict)):
+        raise GuardFailure('pagination-contract')
+    if after_object_id is not None and 'error' not in decoded:
+        rows = decoded.get('features')
+        if not isinstance(rows, list) or len(rows) > record_limit:
+            raise GuardFailure('pagination-contract')
+        previous, ids = after_object_id, []
+        for row in rows:
+            attrs = row.get('attributes') if isinstance(row, dict) else None
+            oid = attrs.get('ObjectId') if isinstance(attrs, dict) else None
+            if type(oid) is not int or not previous < oid <= 2147483647:
+                raise GuardFailure('pagination-contract')
+            ids.append(oid)
+            previous = oid
+        if not ids and decoded.get('exceededTransferLimit') is True:
+            raise GuardFailure('pagination-contract')
+        pagination = dict(afterObjectId=after_object_id, objectIds=ids)
+    response, dropped_oids = sanitize(decoded, schema,
+        BATCH_FIELDS if date_omission_evidence_sha256 is not None else FIELDS)
     retrieved = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     capture = dict(schemaVersion=1, kind='rainfolk-texas-sdr-public-capture',
-        synthetic=False, sourceUrl=SOURCE, queryUrl=QUERY, retrievedAt=retrieved,
+        synthetic=False, sourceUrl=SOURCE, queryUrl=query, retrievedAt=retrieved,
         sourceResponseSha256=digest(raw), sourceSchemaSha256=digest(schema_raw), response=response)
+    if date_omission_evidence_sha256 is not None:
+        capture.update(fieldLimitations={'DateOfWellCompletion': 'source-query-api-400'},
+                       fieldLimitationsEvidenceSha256=date_omission_evidence_sha256)
+    if pagination is not None:
+        capture['pagination'] = pagination
     capture_raw = encoded(capture)
-    if len(capture_raw) > TOTAL_BYTES or clock() - started > TIME_LIMIT:
+    if len(capture_raw) > TOTAL_BYTES or clock() - started > max_seconds:
         raise GuardFailure('capture-budget')
-    evidence = dict(retrievedAt=retrieved, source=SOURCE, queryUrl=QUERY,
+    evidence = dict(retrievedAt=retrieved, source=SOURCE, queryUrl=query,
         networkRequests=requests, responseBytes=total, inputRows=len(response['features']),
         discardedAutomaticObjectIds=dropped_oids, responseSha256=digest(raw),
         schemaSha256=digest(schema_raw), captureSha256=digest(capture_raw),
-        limits=dict(requests=2, rows=200, responseBytes=TOTAL_BYTES, seconds=TIME_LIMIT,
+        limits=dict(requests=2, rows=record_limit, responseBytes=TOTAL_BYTES, seconds=max_seconds,
                     timeoutSeconds=15, pacingSeconds=1, retries=0),
         attribution='Texas Water Development Board; Submitted Drillers Reports / TDLR',
         terms=dict(manual='https://www.twdb.texas.gov/groundwater/data/doc/TWRSRS_UserManual.pdf',
@@ -418,6 +477,17 @@ def _capture(directory, opener=None, pause=time.sleep, clock=time.monotonic, con
             uncertainty='Public workflow evidence; export confidential-filter guarantee and later removal handling unverified; no blanket data license or publication approval.'),
         scope='Local sample only; no full reports, owner/contact values, bulk, index or publication.',
         requests=context['requests'])
+    if date_omission_evidence_sha256 is not None:
+        evidence.update(fieldLimitations=capture['fieldLimitations'],
+            fieldLimitationsEvidenceSha256=date_omission_evidence_sha256,
+            page=dict(offset=0, requestedRows=200, returnedRows=len(response['features']),
+                orderByFields='ObjectId ASC', orderingVerification='requested-source-order',
+                exceededTransferLimit=response['exceededTransferLimit'], complete=False,
+                automaticContinuation=False))
+    if pagination is not None:
+        evidence['page'].update(offset=None, requestedRows=record_limit, afterObjectId=after_object_id,
+            lastObjectId=pagination['objectIds'][-1] if pagination['objectIds'] else after_object_id,
+            orderingVerification='strictly-increasing-returned-objectids')
     destination.mkdir(parents=True, exist_ok=False)
     (destination / 'schema.json').write_bytes(schema_raw)
     # Source response already passed the minimum-attribute check. Metadata and
@@ -428,13 +498,30 @@ def _capture(directory, opener=None, pause=time.sleep, clock=time.monotonic, con
     return evidence
 
 
-def capture(directory, opener=None, pause=time.sleep, clock=time.monotonic):
+def limitation_evidence(value):
+    if value is not None and (not isinstance(value, str) or len(value) != 64
+            or any(c not in '0123456789abcdefABCDEF' for c in value)):
+        raise GuardFailure('limitation-evidence')
+    return value.lower() if value is not None else None
+
+
+def capture(directory, opener=None, pause=time.sleep, clock=time.monotonic,
+            date_omission_evidence_sha256=None, after_object_id=None, record_limit=200, max_seconds=60):
+    date_omission_evidence_sha256 = limitation_evidence(date_omission_evidence_sha256)
+    if (type(max_seconds) is not int or not 1 <= max_seconds <= TIME_LIMIT
+            or (after_object_id is not None and date_omission_evidence_sha256 is None)
+            or (after_object_id is None and record_limit != 200)):
+        raise GuardFailure('pagination-contract')
+    query = (query_url('job-page', record_limit, after_object_id=after_object_id) if after_object_id is not None
+             else BATCH_QUERY if date_omission_evidence_sha256 is not None else QUERY)
     destination = Path(directory)
     if destination.exists():
         raise GuardFailure('output-exists')
-    context = dict(source=SOURCE, queryUrl=QUERY, networkRequests=0, responseBytes=0, requests=[])
+    context = dict(source=SOURCE, queryUrl=query,
+                   networkRequests=0, responseBytes=0, requests=[])
     try:
-        return _capture(directory, opener, pause, clock, context)
+        return _capture(directory, opener, pause, clock, context, date_omission_evidence_sha256,
+                        after_object_id, record_limit, max_seconds)
     except (ValueError, TypeError, KeyError, AttributeError, RecursionError, OverflowError) as error:
         schema_raw = context.pop('schemaRaw', None)
         info = error.info if isinstance(error, SourceFailure) else local_guard_info(error)
@@ -453,7 +540,12 @@ def capture(directory, opener=None, pause=time.sleep, clock=time.monotonic):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--public-sample', action='store_true')
-    parser.add_argument('--_http-phase', choices=('schema', 'query', 'projection', *PROBE_PHASES), help=argparse.SUPPRESS)
+    parser.add_argument('--date-omission-evidence-sha256',
+                        help='select the fixed six-field 200-row page, citing retained date-query failure evidence')
+    parser.add_argument('--after-object-id', type=int)
+    parser.add_argument('--record-limit', type=int, default=200)
+    parser.add_argument('--max-seconds', type=int, default=60)
+    parser.add_argument('--_http-phase', choices=('schema', 'query', 'projection', 'batch-without-date', 'job-page', *PROBE_PHASES), help=argparse.SUPPRESS)
     parser.add_argument('--_record-limit', type=int, default=200, help=argparse.SUPPRESS)
     parser.add_argument('--_fields', help=argparse.SUPPRESS)
     parser.add_argument('--output', type=Path)
@@ -461,20 +553,36 @@ def main():
     if args._http_phase:
         try:
             sys.stdout.buffer.write(http_worker(args._http_phase, args._record_limit,
-                args._fields.split(',') if args._fields is not None else None))
+                args._fields.split(',') if args._fields is not None else None, args.after_object_id))
         except Exception as error:
             info = error.info if isinstance(error, SourceFailure) else local_guard_info(error)
             sys.stderr.buffer.write(encoded(info))
             raise SystemExit(1) from None
         return
     if not args.public_sample:
-        print(json.dumps(dict(dryRun=True, schemaUrl=SCHEMA_URL, queryUrl=QUERY,
-                              maxRecords=200, maxRequests=2, networkRequests=0)))
+        try:
+            evidence_hash = limitation_evidence(args.date_omission_evidence_sha256)
+            if (not 1 <= args.max_seconds <= 60 or (args.after_object_id is not None and evidence_hash is None)
+                    or (args.after_object_id is None and args.record_limit != 200)):
+                raise GuardFailure('pagination-contract')
+            query = (query_url('job-page', args.record_limit, after_object_id=args.after_object_id)
+                     if args.after_object_id is not None else BATCH_QUERY if evidence_hash is not None else QUERY)
+        except GuardFailure as error:
+            print(json.dumps(error.info), file=sys.stderr)
+            raise SystemExit(1) from None
+        print(json.dumps(dict(dryRun=True, schemaUrl=SCHEMA_URL,
+            queryUrl=query, maxRecords=args.record_limit, maxRequests=2, maxResponseBytes=PAGE_BYTES,
+            maxTotalResponseBytes=TOTAL_BYTES, maxSeconds=args.max_seconds, retries=0,
+            automaticContinuation=False, networkRequests=0,
+            fieldLimitations={'DateOfWellCompletion': 'source-query-api-400'} if evidence_hash else {},
+            fieldLimitationsEvidenceSha256=evidence_hash)))
         return
     if args.output is None:
         parser.error('--output required for explicit public sample')
     try:
-        print(json.dumps(capture(args.output)))
+        print(json.dumps(capture(args.output,
+            date_omission_evidence_sha256=args.date_omission_evidence_sha256,
+            after_object_id=args.after_object_id, record_limit=args.record_limit, max_seconds=args.max_seconds)))
     except ValueError as error:
         info = error.info if isinstance(error, SourceFailure) else local_guard_info(error)
         print(json.dumps(info, sort_keys=True), file=sys.stderr)

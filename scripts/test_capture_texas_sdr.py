@@ -21,9 +21,10 @@ spec.loader.exec_module(module)
 
 
 def schema():
-    return dict(fields=[dict(name=k, type=v, domain=None) for k, v in module.TYPES.items()],
+    return dict(fields=[dict(name=k, type=v, domain=None) for k, v in module.TYPES.items()]
+                + [dict(name='ObjectId', type='esriFieldTypeOID', nullable=False)], objectIdField='ObjectId',
         sourceSpatialReference=dict(wkid=4326), dateFieldsTimeReference=dict(timeZone='UTC'),
-        advancedQueryCapabilities=dict(supportsOrderBy=True), maxRecordCount=2000)
+        advancedQueryCapabilities=dict(supportsOrderBy=True, supportsPagination=True, supportsSqlExpression=True), maxRecordCount=2000)
 
 
 def page(rows=2):
@@ -31,6 +32,13 @@ def page(rows=2):
         WellReportTrackingNumber=str(i).zfill(15), LatitudeDD=30.25, LongitudeDD=-97.75,
         ProposedUse=None, DateOfWellCompletion=None, BoreholeDepthFt=None, LocationError=i))
         for i in range(rows)])
+
+
+def batch_page(rows=200):
+    result = page(rows)
+    for row in result['features']:
+        del row['attributes']['DateOfWellCompletion']
+    return result
 
 
 class Response(io.BytesIO):
@@ -252,6 +260,156 @@ class CaptureTests(unittest.TestCase):
         result = json.loads(output)
         self.assertTrue(result['dryRun'])
         self.assertEqual(result['networkRequests'], 0)
+
+    def test_no_date_batch_retains_limitations_raw_flags_and_partial_page_receipt(self):
+        for count, transfer in ((200, True), (3, False), (0, False)):
+            source = batch_page(count)
+            source['exceededTransferLimit'] = transfer
+            evidence, capture, urls = self.run_capture([schema(), source],
+                date_omission_evidence_sha256='C' * 64)
+            self.assertEqual(urls, [module.SCHEMA_URL, module.BATCH_QUERY])
+            self.assertEqual(evidence['networkRequests'], 2)
+            self.assertEqual(evidence['inputRows'], count)
+            self.assertEqual(capture['fieldLimitations'], {'DateOfWellCompletion': 'source-query-api-400'})
+            self.assertEqual(capture['fieldLimitationsEvidenceSha256'], 'c' * 64)
+            self.assertEqual(evidence['fieldLimitations'], capture['fieldLimitations'])
+            self.assertEqual(evidence['page'], dict(offset=0, requestedRows=200, returnedRows=count,
+                orderByFields='ObjectId ASC', orderingVerification='requested-source-order',
+                exceededTransferLimit=transfer, complete=False, automaticContinuation=False))
+            self.assertEqual(capture['response']['features'], source['features'])
+            self.assertTrue(all('DateOfWellCompletion' not in row['attributes']
+                                for row in capture['response']['features']))
+
+    def test_no_date_batch_query_and_cli_dry_run_are_fixed_and_zero_request(self):
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(module.query_url('batch-without-date')).query)
+        self.assertEqual(params['outFields'], [','.join(module.BATCH_FIELDS)])
+        self.assertEqual(params['orderByFields'], ['ObjectId ASC'])
+        self.assertEqual(params['resultRecordCount'], ['200'])
+        self.assertEqual(params['resultOffset'], ['0'])
+        self.assertEqual(params['where'], ['1=1'])
+        for limit in (1, 199, 201, True):
+            with self.assertRaises(module.GuardFailure):
+                module.query_url('batch-without-date', limit)
+        with self.assertRaises(module.GuardFailure):
+            module.query_url('batch-without-date', fields=module.FIELDS)
+        result = json.loads(subprocess.check_output([sys.executable, '-B', str(SCRIPT),
+            '--date-omission-evidence-sha256', 'c' * 64]))
+        self.assertEqual(result['queryUrl'], module.BATCH_QUERY)
+        self.assertEqual(result['networkRequests'], 0)
+        self.assertEqual(result['maxTotalResponseBytes'], 1048576)
+        self.assertEqual(result['maxResponseBytes'], 524288)
+        self.assertEqual(result['maxSeconds'], 60)
+        self.assertFalse(result['automaticContinuation'])
+
+    def test_no_date_batch_rejects_extra_rows_dates_and_invalid_ordering_schema(self):
+        with self.assertRaises(module.GuardFailure):
+            module.sanitize(page(), schema(), ('WellOwner',))
+        for response in (batch_page(201), page(1)):
+            with self.assertRaises(module.GuardFailure):
+                self.run_capture([schema(), response], date_omission_evidence_sha256='c' * 64)
+        for key, value in (('objectIdField', 'unreviewed'),
+                           ('advancedQueryCapabilities', dict(supportsOrderBy=False, supportsPagination=True)),
+                           ('advancedQueryCapabilities', dict(supportsOrderBy='true', supportsPagination=True)),
+                           ('advancedQueryCapabilities', dict(supportsOrderBy=True, supportsPagination=False))):
+            changed = schema()
+            changed[key] = value
+            opener = Opener([changed])
+            with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
+                with self.assertRaises(module.GuardFailure):
+                    module.capture(Path(directory) / 'sample', opener=opener, pause=lambda _: None,
+                                   date_omission_evidence_sha256='c' * 64)
+            self.assertEqual(opener.urls, [module.SCHEMA_URL])
+        for bad in ('', 'z' * 64, 'c' * 63, 'PRIVATE-SENTINEL'):
+            with mock.patch.object(module, 'request_worker') as worker:
+                with self.assertRaises(module.GuardFailure) as error:
+                    module.capture('unused', date_omission_evidence_sha256=bad)
+                self.assertEqual(error.exception.info['guardCode'], 'limitation-evidence')
+                worker.assert_not_called()
+
+    def test_no_date_batch_network_path_keeps_deadline_worker_and_exact_query_phase(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
+            target = Path(directory) / 'sample'
+            with mock.patch.object(module, 'request_worker', side_effect=[
+                    module.encoded(schema()), module.encoded(batch_page())]) as worker:
+                evidence = module.capture(target, pause=lambda _: None,
+                                          date_omission_evidence_sha256='c' * 64)
+            self.assertEqual(worker.call_count, 2)
+            self.assertEqual([call.args[0][-1] for call in worker.call_args_list],
+                             ['schema', 'batch-without-date'])
+            self.assertTrue(all(0 < call.args[1] <= 60 for call in worker.call_args_list))
+            self.assertEqual(evidence['page']['returnedRows'], 200)
+
+    def test_no_date_batch_transport_and_rust_contract_agree_end_to_end(self):
+        binary = SCRIPT.parents[1] / 'crates/us-groundwater/target/debug' / (
+            'gev-us-groundwater.exe' if sys.platform == 'win32' else 'gev-us-groundwater')
+        if not binary.is_file():
+            self.skipTest('Build the existing Rust binary before the integration test')
+        # Fake source rows only: no live response or records are used.
+        _, capture, _ = self.run_capture([schema(), batch_page()],
+            date_omission_evidence_sha256='c' * 64)
+        raw = module.encoded(capture)
+        first = subprocess.check_output([str(binary), '--texas-sdr-v1'], input=raw)
+        self.assertEqual(first, subprocess.check_output([str(binary), '--texas-sdr-v1'], input=raw))
+        result = json.loads(first)
+        self.assertEqual(result['payload']['accounting']['acceptedRecords'], 200)
+        self.assertEqual(result['payload']['accounting']['quarantinedRows'], 0)
+        self.assertFalse(result['payload']['coverage']['complete'])
+        self.assertEqual(result['manifest']['input']['sha256'], module.digest(raw))
+        for record in result['payload']['records']:
+            self.assertIsNone(record['completedAt'])
+            self.assertEqual(record['provenance']['unrequestedFields'], ['DateOfWellCompletion'])
+            self.assertEqual(record['provenance']['fieldLimitationsEvidenceSha256'], 'c' * 64)
+
+    def test_keyset_page_retains_verified_ordered_oid_metadata_and_bounds(self):
+        source = batch_page(2)
+        for row, oid in zip(source['features'], (11, 15)):
+            row['attributes']['ObjectId'] = oid
+        evidence, capture, urls = self.run_capture([schema(), source],
+            date_omission_evidence_sha256='c'*64, after_object_id=10, record_limit=2, max_seconds=10)
+        self.assertEqual(capture['pagination'], dict(afterObjectId=10, objectIds=[11,15]))
+        self.assertEqual(evidence['limits']['seconds'], 10)
+        self.assertEqual(evidence['page']['lastObjectId'], 15)
+        self.assertEqual(evidence['page']['orderingVerification'], 'strictly-increasing-returned-objectids')
+        self.assertFalse(evidence['page']['complete'])
+        self.assertEqual(evidence['discardedAutomaticObjectIds'], 2)
+        params=urllib.parse.parse_qs(urllib.parse.urlsplit(urls[-1]).query)
+        self.assertEqual(params['where'], ['ObjectId>10'])
+        self.assertEqual(params['resultRecordCount'], ['2'])
+        self.assertIn('ObjectId', params['outFields'][0].split(','))
+        self.assertNotIn('resultOffset', params)
+        self.assertTrue(all('ObjectId' not in r['attributes'] for r in capture['response']['features']))
+        binary=SCRIPT.parents[1]/'crates/us-groundwater/target/debug'/('gev-us-groundwater.exe' if sys.platform=='win32' else 'gev-us-groundwater')
+        if binary.is_file():
+            result=json.loads(subprocess.check_output([str(binary),'--texas-sdr-v1'],input=module.encoded(capture)))
+            self.assertEqual(result['payload']['pagination'],capture['pagination'])
+
+    def test_keyset_refuses_missing_reversed_repeated_or_noninteger_oids_without_retry(self):
+        for ids in ((None,12),(12,11),(11,11),(10,12),(True,12),(11,2147483648)):
+            source=batch_page(2)
+            for row,oid in zip(source['features'],ids):
+                row['attributes']['ObjectId']=oid
+            opener=Opener([schema(),source])
+            with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
+                with self.assertRaises(module.GuardFailure):
+                    module.capture(Path(directory)/'page',opener=opener,pause=lambda _:None,
+                        date_omission_evidence_sha256='c'*64,after_object_id=10,record_limit=2)
+            self.assertEqual(len(opener.urls),2)
+        with self.assertRaises(module.GuardFailure):
+            self.run_capture([schema(),batch_page(0)],date_omission_evidence_sha256='c'*64,after_object_id=0)
+        for after in (-1,2147483648,True,'0'):
+            with self.assertRaises(module.GuardFailure):
+                module.query_url('job-page',2,after_object_id=after)
+
+    def test_keyset_worker_uses_persisted_cursor_limit_and_remaining_deadline(self):
+        source=batch_page(1)
+        source['features'][0]['attributes']['ObjectId']=8
+        with tempfile.TemporaryDirectory(dir=SCRATCH) as directory:
+            with mock.patch.object(module,'request_worker',side_effect=[module.encoded(schema()),module.encoded(source)]) as worker:
+                module.capture(Path(directory)/'page',pause=lambda _:None,date_omission_evidence_sha256='c'*64,
+                    after_object_id=7,record_limit=1,max_seconds=9)
+            command=worker.call_args_list[-1].args[0]
+            self.assertEqual(command[-6:],['--_http-phase','job-page','--after-object-id','7','--_record-limit','1'])
+            self.assertTrue(all(0<call.args[1]<=9 for call in worker.call_args_list))
 
     def test_total_deadline_cancels_connect_and_slow_trickle_worker(self):
         # No HTTP: the fake child either stalls before headers (connect-like)

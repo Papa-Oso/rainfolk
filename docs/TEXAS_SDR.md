@@ -183,6 +183,113 @@ checks input, record, payload and manifest hashes. Candidate manifest SHA-256:
 
 ## Capture and record contract
 
+For the separate local pipe-export path, see [bulk import](TEXAS_SDR_BULK.md).
+Bulk dates, datum and text-quality flags are not relabeled as API values.
+
+### Bounded resumable jobs
+
+`well-jobs run|resume|status <queue.json> <job-directory>` accepts adapter
+`texas-sdr`, schemaVersion 1, using the existing command, adapter interface,
+writer lock, immutable artifacts and atomic checkpoint helpers. The USGS v2
+contracts remain source-specific; no scheduler or parallel orchestration service
+is introduced. Run `python -B examples/texas_sdr_offline.py` for an executable
+two-page invented job, resume, duplicate reconciliation and completed no-op proof.
+
+The keyset query uses `ObjectId > afterObjectId`, ascending ObjectId order and
+1..200 rows. It requests the six date-omitted fields plus ObjectId solely as
+paging metadata. Retained service metadata declares a non-null OID, SQL
+expressions and order-by support. The first cursor is zero; the supported OID
+range is positive signed-32-bit. Python verifies every returned OID is strictly
+increasing beyond the cursor, strips it from report attributes, and retains the
+OID vector in capture pagination provenance. Rust independently validates the
+exact query and OID vector. Empty nonterminal pages refuse progress. Report IDs
+remain TWDB-SDR tracking numbers, never OIDs or coordinates.
+
+Example bounded queue (fixture mode additionally requires fixturePages paths):
+
+```json
+{
+  "schemaVersion": 1,
+  "adapter": "texas-sdr",
+  "mode": "live",
+  "dateOmissionEvidenceSha256": "2e78430294ebed2590ba939a5ed958a77ca059e67266a0f6bc34bf793a6ddf4b",
+  "budgets": {
+    "rowsPerPage": 200, "runPages": 1, "jobPages": 2,
+    "jobRequests": 4, "jobBytes": 2097152, "jobRows": 400,
+    "jobSeconds": 300, "runSeconds": 60, "rateMillis": 1000
+  }
+}
+```
+
+This is a future proposal, not an executed live queue. Maximums are ten pages,
+twenty requests and two thousand returned-row allowances per job. Each page
+reserves two requests, 1 MiB response bytes and its full row allowance before
+acquisition; reservations are never refunded or reset on resume. Actual committed
+transport metrics are reported separately; failed/uncertain attempt diagnostics
+remain separate from those known-success totals. Each page validates a fresh
+schema and uses the existing 512 KiB per-response guard, cancellable HTTP worker,
+zero retries and no redirects. The saved first-start deadline is immutable across
+resume and clock rollback refuses acquisition. Per-run time never exceeds that
+remaining lifetime allowance; one second is reserved for worker cleanup.
+
+`checkpoint-sdr.json` binds configuration, reservations, cursor, page hashes and
+reconciled report accounting. Saved captures and normalized candidates are
+revalidated on restart. A complete cache/receipt can replay without refetch,
+including local recovery after expiry. Missing/incomplete evidence after an
+interruption is an uncertain outcome: stop and keep the reservation charged.
+Access denial, rate limit and other transport/validation failures stop the job;
+resume cannot retry them automatically. Budget/config changes require an explicit
+separate job decision, not silent renewal. A concurrent writer is refused.
+
+Identical source IDs across pages coalesce. Any conflicting or invalid same-ID
+version removes that ID from the accepted set and quarantines all its rows,
+including prior versions. Counts reconcile returned rows to accepted IDs plus
+identical duplicates plus quarantines. Immutable page candidates preserve audit
+evidence; consumers must use the reconciled job accepted-ID set rather than
+concatenate page candidates. Raw LocationError, unknown dates and nonspatial
+records keep their existing behavior. Complete is always false, even when the
+current source query reports pagination exhausted. This is not a stable snapshot,
+physical-well census, map activation or national-corpus append.
+
+The previously retained 200-row live sample omitted OIDs and cannot reliably seed
+the new cursor. A future two-page attempt would start at zero, may repeat those
+reports and must count that overlap explicitly. Historical real collection totals
+remain 14 requests / 203 returned rows; this offline work adds zero. After review,
+the proposed job permits at most four additional GETs / 400 returned rows / 2 MiB,
+one page per invocation, within a five-minute nonrenewable job window. No live
+run, publication or costs are authorized by the fixture verification itself.
+
+### Local date-omitted first-page mode
+
+The existing transport has an explicit six-field mode selected by
+`--date-omission-evidence-sha256 <64-hex-digits>`. Without `--public-sample` it
+prints a zero-request plan. The hash cites retained date-query failure evidence;
+it is an operator assertion, not a remote authenticity attestation. The original
+seven-field mode remains unchanged.
+
+The exact new query is pjson, where=1=1, the six approved fields in their existing
+order with DateOfWellCompletion omitted, returnGeometry=false,
+orderByFields=ObjectId ASC, resultRecordCount=200 and resultOffset=0. The source
+schema must declare non-null ObjectId/esriFieldTypeOID, order-by and pagination
+support. Returned automatic OIDs remain transport metadata and are stripped.
+Source ordering is requested, not independently verified from stripped OIDs;
+normalized records sort deterministically by source-qualified report ID.
+
+The capture must carry DateOfWellCompletion=source-query-api-400 and the evidence
+hash. Rust requires these for this exact batch URL and rejects query drift,
+extra rows or undeclared response fields, including an unexpected date null.
+Completion dates remain unknown; raw LocationError and nonspatial retention are
+unchanged. The page receipt records offset, requested/returned rows, ordering and
+transfer-limit status. Complete remains false even for a short/empty page, and
+automatic continuation is false. This is not a multi-page SDR checkpoint adapter.
+
+Limits remain two sequential requests (schema then one page), 200 returned rows,
+512 KiB per accepted response, 1 MiB total response bytes and capture input,
+60 seconds total, 15 seconds socket inactivity, one-second pacing, zero retries
+or redirects. No live request accompanies this local update. Zero-request plan:
+
+    python -B scripts/capture-texas-sdr.py --date-omission-evidence-sha256 2e78430294ebed2590ba939a5ed958a77ca059e67266a0f6bc34bf793a6ddf4b
+
 CLI: gev-us-groundwater --texas-sdr-v1, JSON stdin/stdout. Library:
 texas_sdr::normalize. Cap 1 MiB, one response, 200 rows. Adapter accesses no
 network, file, credential or environment.
@@ -272,8 +379,8 @@ map-eligible, one nonspatial, zero quarantines. Separate malformed/duplicate-ID
 tests prove quarantine. Public mode/transport use synthetic or fake responses
 in tests; real records are never relabeled synthetic or committed.
 
-Verified locally: 84 Rust tests (14 core, 46 queue/segment, 6 index, 18 SDR),
-42 Python tests (24 USGS, 18 SDR), locked offline build, formatting and both
+Verified locally: 97 Rust tests (14 core, 54 queue/job, 6 index, 23 SDR),
+50 Python tests (24 USGS, 26 SDR), locked offline build, formatting and both
 examples passed. Windows index atomic-replacement checks used scoped execution
 approval; no production file-writing/security behavior was changed. The USGS
 example retains six IDs, identical replay, tamper rejection and last-good output;

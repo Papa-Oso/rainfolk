@@ -593,6 +593,171 @@ fn one_row_public_projection_keeps_unrequested_fields_unknown_and_scoped() {
     assert!(normalize(&serde_json::to_vec(&input).unwrap()).is_err());
 }
 
+fn public_batch(rows: usize) -> Value {
+    let mut input = one();
+    input["kind"] = json!("rainfolk-texas-sdr-public-capture");
+    input["synthetic"] = json!(false);
+    input["queryUrl"] = json!(gev_us_groundwater::texas_sdr::public_batch_query_url());
+    input["sourceResponseSha256"] = json!("a".repeat(64));
+    input["sourceSchemaSha256"] = json!("b".repeat(64));
+    input["fieldLimitations"] = json!({"DateOfWellCompletion":"source-query-api-400"});
+    input["fieldLimitationsEvidenceSha256"] = json!("c".repeat(64));
+    input["response"]["spatialReferenceBasis"] = json!("source-response; attributes-unverified");
+    let template = input["response"]["features"][0].clone();
+    input["response"]["features"] = (0..rows)
+        .map(|i| {
+            let mut row = template.clone();
+            let attributes = row["attributes"].as_object_mut().unwrap();
+            attributes.remove("DateOfWellCompletion");
+            attributes.insert("WellReportTrackingNumber".into(), json!(format!("{i:015}")));
+            attributes.insert("LocationError".into(), json!(i as i64 - 100));
+            if i == 1 {
+                attributes.insert("LatitudeDD".into(), Value::Null);
+            }
+            row
+        })
+        .collect();
+    input
+}
+
+#[test]
+fn no_date_batch_preserves_unknown_dates_flags_and_deterministic_source_identity() {
+    let mut input = public_batch(200);
+    let output = run(&input);
+    assert_eq!(output, run(&input));
+    assert_eq!(
+        output["payload"]["accounting"],
+        json!({"inputRows":200,"acceptedRecords":200,
+        "identicalDuplicateRows":0,"quarantinedRows":0,"mapEligibleRecords":199,"nonmappedRecords":1})
+    );
+    let records = output["payload"]["records"].as_array().unwrap();
+    assert_eq!(records[0]["id"], "TWDB-SDR-000000000000000");
+    assert_eq!(records[0]["locationError"], -100);
+    assert_eq!(records[0]["mapEligible"], true);
+    assert_eq!(records[1]["mapEligible"], false);
+    for record in records {
+        assert!(record["completedAt"].is_null());
+        assert_eq!(record["coordinateAccuracy"], "unknown");
+        assert_eq!(
+            record["provenance"]["unrequestedFields"],
+            json!(["DateOfWellCompletion"])
+        );
+        assert_eq!(
+            record["provenance"]["fieldLimitationsEvidenceSha256"],
+            "c".repeat(64)
+        );
+        assert_eq!(
+            record["provenance"]["fieldLimitations"]["DateOfWellCompletion"],
+            "source-query-api-400"
+        );
+    }
+    input["response"]["features"]
+        .as_array_mut()
+        .unwrap()
+        .reverse();
+    let reversed = run(&input);
+    let content = |output: &Value| {
+        output["payload"]["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| (r["id"].clone(), r["contentSha256"].clone()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(content(&output), content(&reversed));
+}
+
+#[test]
+fn no_date_batch_refuses_query_drift_extra_rows_dates_and_missing_evidence() {
+    let input = public_batch(1);
+    let query = gev_us_groundwater::texas_sdr::public_batch_query_url();
+    for query in [
+        query.replace("resultOffset=0", "resultOffset=200"),
+        query.replace("ObjectId%20ASC", "WellReportTrackingNumber"),
+        query.replace("resultRecordCount=200", "resultRecordCount=201"),
+        query.replace("resultRecordCount=200", "resultRecordCount=199"),
+        query.replace("LocationError", "WellOwner"),
+    ] {
+        let mut bad = input.clone();
+        bad["queryUrl"] = json!(query);
+        assert!(normalize(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+    for field in ["fieldLimitations", "fieldLimitationsEvidenceSha256"] {
+        let mut bad = input.clone();
+        bad.as_object_mut().unwrap().remove(field);
+        assert!(normalize(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+    let mut bad = input.clone();
+    bad["response"]["features"][0]["attributes"]["DateOfWellCompletion"] = Value::Null;
+    assert!(normalize(&serde_json::to_vec(&bad).unwrap()).is_err());
+    assert!(normalize(&serde_json::to_vec(&public_batch(201)).unwrap()).is_err());
+    assert!(normalize(&vec![b' '; MAX_BYTES + 1]).is_err());
+}
+
+#[test]
+fn no_date_batch_short_or_empty_page_never_claims_complete_coverage() {
+    for rows in [0, 3, 200] {
+        for transfer in [false, true] {
+            let mut input = public_batch(rows);
+            input["response"]["exceededTransferLimit"] = json!(transfer);
+            let output = run(&input);
+            assert_eq!(output["payload"]["coverage"]["complete"], false);
+            assert_eq!(
+                output["payload"]["coverage"]["exceededTransferLimit"],
+                transfer
+            );
+            assert_eq!(output["payload"]["accounting"]["inputRows"], rows);
+            assert_eq!(output["payload"]["accounting"]["acceptedRecords"], rows);
+        }
+    }
+}
+
+#[test]
+fn keyset_page_requires_exact_scope_and_verified_oid_chain() {
+    use gev_us_groundwater::texas_sdr::public_job_query_url;
+    let mut input = public_batch(2);
+    input["queryUrl"] = json!(public_job_query_url(10, 2).unwrap());
+    input["pagination"] = json!({"afterObjectId":10,"objectIds":[11,15]});
+    let result = run(&input);
+    assert_eq!(result["payload"]["pagination"], input["pagination"]);
+    assert_eq!(result["payload"]["coverage"]["complete"], false);
+    for pagination in [
+        json!({"afterObjectId":9,"objectIds":[11,15]}),
+        json!({"afterObjectId":10.0,"objectIds":[11,15]}),
+        json!({"afterObjectId":10,"objectIds":[15,11]}),
+        json!({"afterObjectId":10,"objectIds":[11,11]}),
+        json!({"afterObjectId":10,"objectIds":[10,15]}),
+        json!({"afterObjectId":10,"objectIds":[11]}),
+        json!({"afterObjectId":10,"objectIds":[11,2147483648_u64]}),
+    ] {
+        let mut bad = input.clone();
+        bad["pagination"] = pagination;
+        assert!(normalize(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+    let query = input["queryUrl"].as_str().unwrap();
+    for url in [
+        query.replace("%3E10", "%3E010"),
+        query.replace("ObjectId%3E10", "1%3D1"),
+        format!("{query}&resultOffset=0"),
+        query.replace("resultRecordCount=2", "resultRecordCount=201"),
+    ] {
+        let mut bad = input.clone();
+        bad["queryUrl"] = json!(url);
+        assert!(normalize(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+}
+
+#[test]
+fn empty_keyset_page_must_be_terminal_and_cannot_invent_cursor_progress() {
+    let mut input = public_batch(0);
+    input["queryUrl"] = json!(gev_us_groundwater::texas_sdr::public_job_query_url(10, 2).unwrap());
+    input["pagination"] = json!({"afterObjectId":10,"objectIds":[]});
+    assert!(normalize(&serde_json::to_vec(&input).unwrap()).is_err());
+    input["response"]["exceededTransferLimit"] = json!(false);
+    assert_eq!(run(&input)["payload"]["accounting"]["acceptedRecords"], 0);
+    assert_eq!(run(&input)["payload"]["coverage"]["complete"], false);
+}
+
 #[test]
 fn cli_reads_fixture_without_network_and_rejects_bad_mode() {
     use std::io::Write;
