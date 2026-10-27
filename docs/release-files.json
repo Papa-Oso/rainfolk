@@ -274,8 +274,8 @@
     },
     {
       "path": "crates/us-groundwater/src/bin/well_jobs.rs",
-      "bytes": 34592,
-      "sha256": "90aca9c697d91432d95be545ad981157e837734166c9a9de2c93849ba257d433"
+      "bytes": 34703,
+      "sha256": "d5877de51e77108b66ce1add2c2e9e194c757d618b1a0752ea52408b59fe63ba"
     },
     {
       "path": "crates/us-groundwater/src/job_migration.rs",
@@ -324,8 +324,8 @@
     },
     {
       "path": "crates/us-groundwater/src/usgwd.rs",
-      "bytes": 25706,
-      "sha256": "240b8c960f47d12622c2ec77ca4e23a574e62c24e7c6f9132614f554d1d372af"
+      "bytes": 26616,
+      "sha256": "e1fe996ec5301e0cd72560f05fa627d2aec5b5cc600bad46a2f917cc88b1f0c7"
     },
     {
       "path": "crates/us-groundwater/tests/texas_sdr.rs",
@@ -364,8 +364,8 @@
     },
     {
       "path": "docs/USGWD.md",
-      "bytes": 8028,
-      "sha256": "11585486801ba27a646ab1ae939f49f212e02d4b4d931d60472d640a471257ac"
+      "bytes": 9106,
+      "sha256": "1e1ef7bd7565a106f4369267b38cedc4ae139348a871e8e8ea0c80d5336601ee"
     },
     {
       "path": "docs/dependencies.json",
@@ -549,8 +549,8 @@
     },
     {
       "path": "scripts/test_capture_usgwd.py",
-      "bytes": 10502,
-      "sha256": "c0c593640ec923e58d7c73c2aec0eca1d606b04ebe8f927bf325a0bec6cd084f"
+      "bytes": 11590,
+      "sha256": "9d6913a56a77392f400421db4eb3d69ef68db41bde039ae7b299eb089501f353"
     },
     {
       "path": "scripts/usgs-key.ps1",

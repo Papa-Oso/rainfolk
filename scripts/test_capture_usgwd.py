@@ -32,7 +32,9 @@ class UsgwdTests(unittest.TestCase):
             license='CC-BY-4.0',attribution='Invented regression records; no downloaded data',schemaSha256='b'*64)
         receipt=self.root/'source.json';receipt.write_text(json.dumps(source));return csv_path,receipt
     def run_import(self,paths,out='output',allowance=10,okay=True):
-        r=subprocess.run([str(BINARY),'import-usgwd',*map(str,paths),str(self.root/out),str(allowance)],capture_output=True)
+        args=[str(BINARY),'import-usgwd',*map(str,paths),str(self.root/out)]
+        if allowance is not None:args.append(str(allowance))
+        r=subprocess.run(args,capture_output=True)
         if okay:self.assertEqual(r.returncode,0,r.stderr.decode());return json.loads(r.stdout)
         self.assertNotEqual(r.returncode,0);return r
     def payload(self,out='output'):
@@ -53,7 +55,8 @@ class UsgwdTests(unittest.TestCase):
         rows += [rows[0],dict(rows[1],County='Invented conflict'),dict(rows[2],**{'Well Depth (Feet)':'-1'})]
         paths=self.source(rows);first=self.run_import(paths,allowance=1)
         self.assertFalse(first['snapshotFullyRead']);self.assertFalse((self.root/'output/usgwd-manifest.json').exists())
-        final=self.run_import(paths,allowance=1)
+        final=self.run_import(paths,allowance=None)
+        self.assertEqual(final['prefixReplayRows'],200)
         self.assertEqual(final['accounting'],dict(inputRows=204,acceptedRecords=199,identicalDuplicateRows=1,quarantinedRows=4,mapEligibleRecords=199,nonmappedRecords=0))
         self.assertTrue(final['snapshotFullyRead']);self.assertEqual(len(self.index()),201)
         self.run_import(paths,'fresh');self.assertEqual(self.index(),self.index('fresh'))
@@ -81,6 +84,18 @@ class UsgwdTests(unittest.TestCase):
         paths=self.source();source=json.loads(paths[1].read_text());source['inputBytes']=192*1024*1024+1
         paths[1].write_text(json.dumps(source));self.run_import(paths,okay=False)
         self.assertFalse((self.root/'output').exists())
+    def test_normal_full_file_path_keeps_state_beyond_one_hundred_partitions(self):
+        rows=[dict(self.rows[0],**{'Well ID':f'FULL_{i}'}) for i in range(20001)]
+        r=self.run_import(self.source(rows),allowance=None)
+        self.assertTrue(r['snapshotFullyRead']);self.assertFalse(r['complete'])
+        self.assertEqual(r['partitions'],101);self.assertEqual(r['newPartitions'],101)
+        self.assertEqual(r['prefixReplayRows'],0);self.assertEqual(r['prefixReplaySeconds'],0)
+        self.assertEqual(r['accounting']['acceptedRecords'],20001)
+        self.assertEqual(r['limits']['rows'],250000);self.assertEqual(r['limits']['invocationSeconds'],300)
+    def test_explicit_full_mode_and_numeric_allowance_guards_remain(self):
+        paths=self.source();r=self.run_import(paths,allowance='full')
+        self.assertTrue(r['snapshotFullyRead']);self.assertEqual(r['prefixReplayRows'],0)
+        self.run_import(paths,'too-many',allowance=101,okay=False)
     def test_invalid_utf8_in_another_field_quarantines_all_id_versions_in_both_orders(self):
         good=self.rows[0];bad=dict(good,County='INVALID-UTF8-MARKER')
         for n,rows in enumerate(([good,bad],[bad,good])):

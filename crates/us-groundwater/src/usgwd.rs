@@ -333,10 +333,18 @@ pub(super) fn run(
     dir: &Path,
     allowance: usize,
 ) -> Result<Value, String> {
-    let started = Instant::now();
     if !(1..=100).contains(&allowance) {
         return Err("new partition allowance must be 1..100".into());
     }
+    ingest(csv, receipt, dir, allowance)
+}
+// One process keeps reconciliation state across batches. The maximum number of
+// new partitions derives from the existing file-row cap, not an unbounded loop.
+pub(super) fn run_full(csv: &Path, receipt: &Path, dir: &Path) -> Result<Value, String> {
+    ingest(csv, receipt, dir, ROWS.div_ceil(200))
+}
+fn ingest(csv: &Path, receipt: &Path, dir: &Path, allowance: usize) -> Result<Value, String> {
+    let started = Instant::now();
     let src = source(receipt)?;
     let fingerprint = hash(&encode(&src)?);
     let mut input = File::open(csv).map_err(|_| "CSV open failed")?;
@@ -414,6 +422,8 @@ pub(super) fn run(
         return Err("USGWD schema/header changed".into());
     }
     let (mut count, mut used, mut new_parts, mut spatial) = (0usize, 0u64, 0usize, 0u64);
+    let parse_started = Instant::now();
+    let (mut replayed_rows, mut replay_seconds) = (0usize, 0.0f64);
     let mut reports = sdr_jobs::Reports::default();
     let mut refs = Vec::new();
     loop {
@@ -467,6 +477,8 @@ pub(super) fn run(
                 return Err("USGWD saved partition mismatch".into());
             }
             used += bytes.len() as u64;
+            replayed_rows = count;
+            replay_seconds = parse_started.elapsed().as_secs_f64();
             if used + OUTPUT_RESERVE > OUTPUT_CAP {
                 return Err("USGWD replay/output cap".into());
             }
@@ -486,8 +498,11 @@ pub(super) fn run(
                 .map_err(|_| "CSV read failure")?
                 .is_empty()
         {
+            if count >= ROWS {
+                return Err("USGWD row cap; checkpoint retained".into());
+            }
             return Ok(
-                json!({"accounting":reports.counts(),"complete":false,"snapshotFullyRead":false,"partitions":refs.len(),"newPartitions":new_parts,"networkRequests":0}),
+                json!({"accounting":reports.counts(),"complete":false,"snapshotFullyRead":false,"partitions":refs.len(),"newPartitions":new_parts,"networkRequests":0,"prefixReplayRows":replayed_rows,"prefixReplaySeconds":replay_seconds}),
             );
         }
     }
@@ -550,7 +565,7 @@ pub(super) fn run(
         save_bounded(&final_path, &mut manifest, MANIFEST_CAP, started)?;
     }
     Ok(
-        json!({"accounting":reports.counts(),"complete":false,"snapshotFullyRead":true,"partitions":refs.len(),"newPartitions":new_parts,"manifestSha256":hash(&read_capped(&final_path,MANIFEST_CAP)?),"artifactBytes":used,"elapsedSeconds":started.elapsed().as_secs_f64(),"networkRequests":0,
+        json!({"accounting":reports.counts(),"complete":false,"snapshotFullyRead":true,"partitions":refs.len(),"newPartitions":new_parts,"manifestSha256":hash(&read_capped(&final_path,MANIFEST_CAP)?),"artifactBytes":used,"elapsedSeconds":started.elapsed().as_secs_f64(),"networkRequests":0,"prefixReplayRows":replayed_rows,"prefixReplaySeconds":replay_seconds,
         "limits":{"inputBytes":INPUT_CAP,"rows":ROWS,"outputBytes":OUTPUT_CAP,"checkpointBytes":CHECKPOINT_CAP,"manifestBytes":MANIFEST_CAP,"invocationSeconds":RUN_SECONDS}}),
     )
 }

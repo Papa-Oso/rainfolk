@@ -503,25 +503,25 @@ fn cli() -> Result<(), String> {
     if args.first().is_some_and(|s| s == "import-usgwd") {
         if !(4..=5).contains(&args.len()) {
             return Err(
-                "usage: well-jobs import-usgwd <csv> <source.json> <directory> [new-partitions=10]"
+                "usage: well-jobs import-usgwd <csv> <source.json> <directory> [full|new-partitions]; default full"
                     .into(),
             );
         }
-        let allowance = args
-            .get(4)
-            .map(|s| s.parse::<usize>())
-            .transpose()
-            .map_err(|_| "invalid partition allowance")?
-            .unwrap_or(10);
-        println!(
-            "{}",
-            usgwd::run(
-                Path::new(&args[1]),
-                Path::new(&args[2]),
-                Path::new(&args[3]),
-                allowance
-            )?
+        let (csv, receipt, output) = (
+            Path::new(&args[1]),
+            Path::new(&args[2]),
+            Path::new(&args[3]),
         );
+        let result = match args.get(4).map(String::as_str) {
+            None | Some("full") => usgwd::run_full(csv, receipt, output)?,
+            Some(n) => usgwd::run(
+                csv,
+                receipt,
+                output,
+                n.parse().map_err(|_| "invalid partition allowance")?,
+            )?,
+        };
+        println!("{result}");
         return Ok(());
     }
     if args.first().is_some_and(|s| s == "import-sdr-bulk") {

@@ -10,12 +10,26 @@ receipts and generated records remain in ignored local storage. The committed
 After the existing offline build:
 
 ```sh
-crates/us-groundwater/target/debug/well-jobs import-usgwd saved.csv source.json .temp-gev/usgwd-run 1
+crates/us-groundwater/target/debug/well-jobs import-usgwd saved.csv source.json .temp-gev/usgwd-run
 ```
 
-Use the same command to resume, permitting at most one new 200-row partition.
-The optional allowance is 1..100 (default 10). There is no network code in this
-command. Acquisition is separate and must obey its authorized budget.
+The default (also available as optional `full`) processes the file in one bounded
+invocation, retaining reconciliation state across 200-row batches. Its maximum
+1,250 new partitions derives from the unchanged 250,000-row file cap. An explicit
+numeric allowance of 1..100 permits deliberate interruption; e.g. append `1` for
+one new partition. Use the same output directory to resume; the default full mode
+verifies and replays its saved prefix once, then continues in the same process.
+Summary fields report prefix replay rows and seconds. There is no network code
+in this command. Acquisition is separate and must obey its authorized budget.
+
+The saved 200,000-row/177.20 MB synthetic fixture completed in one full invocation
+in 176.93 seconds, with 100.99 MB measured peak working set and zero prefix replay.
+It emitted 1,000 row partitions and 1,000 ID-index shards; all 200,000 record hashes
+and artifact references verified within 185.46 seconds total. The manifest was
+367,269 bytes and checkpoint 183,272 bytes. This is a local debug-build measurement,
+not proof of full-state coverage, a memory bound for every input, or index readiness.
+The former forced-pause measurement preserved only 120,000 rows at its 300-second
+total watchdog; its prior checkpoint and 600 partition hashes remain unchanged.
 
 The closed source receipt has schemaVersion=1, resourceId, releaseSha256,
 inputSha256, inputBytes, state, sourceUrl, checkedAt, sourcePublishedAt,
