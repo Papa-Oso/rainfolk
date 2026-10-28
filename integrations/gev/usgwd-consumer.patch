@@ -38,14 +38,21 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
      viewport: true,
      async getSnapshot({
        signal,
-@@ -119,7 +121,30 @@
+@@ -119,7 +121,37 @@
            bounds[1] >= bounds[3])
        )
          throw new TypeError('Invalid viewport');
 -      const index = await read(`${base}index.json`);
 +      let index = await read(`${base}index.json`);
 +      const federated = Array.isArray(index.children);
-+      onCatalog({catalogRecords:index.catalogRecords ?? null, mappedRecords:index.indexedRecords, unmappedRecords:index.unmappedRecords ?? null, distinctPhysicalWells:null});
++      const publishCatalog = (value) => {
++        combined.throwIfAborted();
++        if (current !== generation) throw new DOMException('Stale viewport', 'AbortError');
++        const catalog = index.catalogRecords ?? null, unmapped = index.unmappedRecords ?? null;
++        if (catalog !== null && (!Number.isSafeInteger(catalog) || catalog < index.indexedRecords || !Number.isSafeInteger(unmapped) || unmapped !== catalog - index.indexedRecords)) throw new TypeError('Invalid catalog accounting');
++        onCatalog({catalogRecords:catalog, mappedRecords:Number.isSafeInteger(index.indexedRecords) ? index.indexedRecords : null, unmappedRecords:unmapped, distinctPhysicalWells:null});
++        return value;
++      };
 +      let regionsReady = !federated;
 +      if (federated) {
 +        if (index.sourceKind !== 'USGWD' || index.children.length > 50 || index.regions?.length !== 0 || index.children.reduce((n, c) => n + c.count, 0) !== index.indexedRecords || !Number.isSafeInteger(index.catalogRecords) || index.catalogRecords < index.indexedRecords || index.unmappedRecords !== index.catalogRecords - index.indexedRecords) throw new TypeError('Invalid federated source accounting');
@@ -70,7 +77,7 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
        if (
          index.schemaVersion !== 1 ||
          index.kind !== 'gev-well-spatial-index' ||
-@@ -129,8 +154,8 @@
+@@ -129,8 +161,8 @@
          throw new TypeError('Invalid spatial index');
        for (const tile of index.regions) {
          if (
@@ -81,7 +88,7 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
            !Array.isArray(tile.bounds) ||
            tile.bounds.length !== 4 ||
            !tile.bounds.every(Number.isFinite) ||
-@@ -156,8 +181,8 @@
+@@ -156,8 +188,8 @@
          if (
            new Set(index.regions.map((t) => t.url)).size !==
              index.regions.length ||
@@ -92,7 +99,43 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
          )
            throw new TypeError('Index accounting mismatch');
          const ref = index.aggregates;
-@@ -224,7 +249,7 @@
+@@ -165,7 +197,7 @@
+           partitioned = true;
+           cachedCounts = undefined;
+           if (!bounds)
+-            return validateCountView({
++            return publishCatalog(validateCountView({
+               schemaVersion: 1,
+               kind: 'gev-well-count-view',
+               cells: [],
+@@ -173,7 +205,7 @@
+               total: index.indexedRecords,
+               reason: 'No visible ellipsoid',
+               coverageComplete: false,
+-            });
++            }));
+           const loaded = await partitionedLoader.load(
+             ref,
+             index.indexedRecords,
+@@ -191,7 +223,7 @@
+           )
+             throw new TypeError('Invalid count reference');
+           if (!bounds)
+-            return validateCountView({
++            return publishCatalog(validateCountView({
+               schemaVersion: 1,
+               kind: 'gev-well-count-view',
+               cells: [],
+@@ -199,7 +231,7 @@
+               total: index.indexedRecords,
+               reason: 'No visible ellipsoid',
+               coverageComplete: false,
+-            });
++            }));
+           if (
+             cachedCounts?.sha === ref.sha256 &&
+             cachedCounts.total === index.indexedRecords
+@@ -224,7 +256,7 @@
          0,
        );
        const over =
@@ -101,16 +144,40 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
        if (grids && (!bounds || over)) {
          const view = {
            ...countView(
-@@ -245,7 +270,7 @@
+@@ -245,7 +277,7 @@
          // A source-only caller has no screen resolution evidence. Do not eagerly
          // hydrate arbitrary detail islands at national zoom. The app supplies its
          // existing screen-aware eligibility callback for mixed views.
 -        if (partitioned && !detailPriority) return view;
-+        if (federated || partitioned && !detailPriority) return view;
++        if (federated || partitioned && !detailPriority) return publishCatalog(view);
          const startBytes = totalBytes;
          const mixed = await refineCountView(
            view,
-@@ -322,7 +347,7 @@
+@@ -259,7 +291,7 @@
+           detailPriority,
+         );
+         combined.throwIfAborted();
+-        return mixed;
++        return publishCatalog(mixed);
+       }
+       if (over)
+         throw new TypeError('Detail budget exceeded; count index required');
+@@ -294,12 +326,12 @@
+           acquisitions.set(JSON.stringify(a), a);
+         if (acquisitions.size > 256) {
+           if (grids)
+-            return countView(
++            return publishCatalog(countView(
+               grids,
+               bounds,
+               'Provenance budget; showing complete counts',
+               countBudget,
+-            );
++            ));
+           throw new TypeError('Detail provenance budget');
+         }
+       }
+@@ -322,13 +354,13 @@
            country: 'US',
            complete: false,
            indexed: true,
@@ -119,6 +186,13 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
          },
          acquisitions: [...acquisitions.values()],
          records: [...records.values()].filter(inBounds),
+       };
+       combined.throwIfAborted();
+-      return validateWellPack(pack);
++      return publishCatalog(validateWellPack(pack));
+     },
+     cancel() {
+       generation++;
 diff --git a/src/layers/usGroundwater/index.js b/src/layers/usGroundwater/index.js
 --- a/src/layers/usGroundwater/index.js
 +++ b/src/layers/usGroundwater/index.js
@@ -190,3 +264,23 @@ diff --git a/src/layers/usGroundwater/countRenderer.js b/src/layers/usGroundwate
            count: cell.count.toLocaleString(),
          }),
          position: Cesium.Cartesian3.fromDegrees(...center),
+diff --git a/src/layers/usGroundwater/spatialSource.test.mjs b/src/layers/usGroundwater/spatialSource.test.mjs
+--- a/src/layers/usGroundwater/spatialSource.test.mjs
++++ b/src/layers/usGroundwater/spatialSource.test.mjs
+@@ -421,3 +421,16 @@
+   const { validateCountView } = await import('./countGrids.js');
+   assert.throws(() => validateCountView(bad), /overlaps/);
+ });
++
++test('catalog publication waits for admitted snapshot and failed refresh keeps last-good summary', async () => {
++  const h=harness();let index={...h.index,indexedRecords:6,catalogRecords:6,unmappedRecords:0};const published=[];
++  const source=createSpatialWellSource({onCatalog:s=>published.push(s),fetchImpl:async url=>{
++    const p=new URL(url).pathname;
++    return new Response(p.endsWith('index.json')?JSON.stringify(index):h.bodies.get(p));
++  }});
++  await source.getSnapshot();assert.equal(published.length,1);
++  assert.deepEqual(published[0],{catalogRecords:6,mappedRecords:6,unmappedRecords:0,distinctPhysicalWells:null});
++  index={schemaVersion:999,kind:'invalid',sourceKind:'USGWD',children:[],regions:[],indexedRecords:123,catalogRecords:987,unmappedRecords:864};
++  await assert.rejects(source.getSnapshot());assert.equal(published.length,1);
++  assert.equal(published[0].catalogRecords,6);
++});

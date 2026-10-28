@@ -264,13 +264,13 @@
     },
     {
       "path": "crates/us-groundwater/Cargo.toml",
-      "bytes": 425,
-      "sha256": "e8672e6fb12bf27c16c5406925b86e82a112312f2083b07a2cef33dfaeefb32d"
+      "bytes": 471,
+      "sha256": "cc97480f84b713a1f508b7e730e137df53b358ac7a41afa7bcfdbfdcf685504a"
     },
     {
       "path": "crates/us-groundwater/src/bin/well_index.rs",
-      "bytes": 53728,
-      "sha256": "0c4b0f3d48dea96d981c5a3c0e5814af182b90278fc2297d410bb98b67233993"
+      "bytes": 57723,
+      "sha256": "01d4988e495599b54d2a1542d7c318e5a1f07c1f2cbc5af51c5f1349cb43ed41"
     },
     {
       "path": "crates/us-groundwater/src/bin/well_jobs.rs",
@@ -384,8 +384,8 @@
     },
     {
       "path": "docs/USGWD_MAP.md",
-      "bytes": 5573,
-      "sha256": "9d761fd8b1c3dbc5dc1286f09272438c722bdb966f61b073eb95e7ffd138b8ad"
+      "bytes": 6198,
+      "sha256": "8f29df413d68d3f619f57347a19f9092ccf50b1831dee7152c313176e743fe0a"
     },
     {
       "path": "docs/dependencies.json",
@@ -549,18 +549,18 @@
     },
     {
       "path": "integrations/gev/consumer-pins.json",
-      "bytes": 1752,
-      "sha256": "d14b9b4438c4fe33127ce60a04ac16b0a0a0de2fe0b2977cf33a4a71ea066529"
+      "bytes": 2008,
+      "sha256": "d215d45ae4ef87519ba18b3c33f6b684d5ec34baec629faf0f2ca9c9206c0fb1"
     },
     {
       "path": "integrations/gev/historicalPack.mjs",
-      "bytes": 7749,
-      "sha256": "99cb1fb4f3295a48b10c5ca2d83ecfa700cfec7b071ff73d2077dc456a462c49"
+      "bytes": 7840,
+      "sha256": "4840834568e0d7c545bf2648ca1b354a584b742a72dcd16f201fb1d0357d8531"
     },
     {
       "path": "integrations/gev/historicalPack.test.mjs",
-      "bytes": 4591,
-      "sha256": "5f7a1eb4077d677a6b51929b42ccbb4658f246e7ed09cf5ef410f98520c3d92a"
+      "bytes": 4876,
+      "sha256": "7247715c8ad67dc725ecff32e75ebd565ea1c06ba98ad9c8f434033e20b152bd"
     },
     {
       "path": "integrations/gev/prepare-consumer.py",
@@ -594,8 +594,8 @@
     },
     {
       "path": "integrations/gev/usgwd-consumer.patch",
-      "bytes": 10829,
-      "sha256": "8546c2e9e100a0c002e352bbf48017011a0804a6be8bce9223d99d18700f3cae"
+      "bytes": 14814,
+      "sha256": "0ec544a600082706924093d27ffc5f1c5806919f8236d07329adee67ff097ed9"
     },
     {
       "path": "scripts/capture-texas-sdr-bulk.py",
@@ -644,8 +644,8 @@
     },
     {
       "path": "scripts/test_capture_usgwd_map.py",
-      "bytes": 8194,
-      "sha256": "b94768b9c89cb0122d93be5916bfe18b793db6b062d07536f4e4f448cbc29d8e"
+      "bytes": 9522,
+      "sha256": "bcf86ad227aadfafd2cc63e27eb3cc223379bdb26ed7e5c98ff8e5d9c456e61d"
     },
     {
       "path": "scripts/usgs-key.ps1",

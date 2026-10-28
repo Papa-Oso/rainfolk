@@ -372,6 +372,90 @@ fn compact_details(
     }
     Ok(regions)
 }
+// Historical acquisitions are constant for a state. Buffer a bounded number of
+// already admitted rows per existing half-degree cell, avoiding a durable tiny
+// file for each source-partition/cell intersection. Final compaction is unchanged.
+#[derive(Default)]
+struct HistoricalCellBuffer {
+    cells: BTreeMap<(i32, i32), (Vec<Value>, usize)>,
+    rows: usize,
+    bytes: usize,
+}
+impl HistoricalCellBuffer {
+    fn flush(
+        &mut self,
+        key: (i32, i32),
+        out: &Path,
+        budget: &Budget,
+        base: &Value,
+        regions: &mut Vec<Value>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (mut rows, bytes) = self
+            .cells
+            .remove(&key)
+            .ok_or("historical cell buffer key")?;
+        self.rows -= rows.len();
+        self.bytes -= bytes;
+        rows.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+        write_initial_cell(out, budget, key, &rows, base, regions)
+    }
+    fn add(
+        &mut self,
+        key: (i32, i32),
+        row: Value,
+        out: &Path,
+        budget: &Budget,
+        base: &Value,
+        regions: &mut Vec<Value>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        budget.check()?;
+        let bytes = serde_json::to_vec(&row)?.len();
+        let cell = self.cells.entry(key).or_default();
+        cell.0.push(row);
+        cell.1 += bytes;
+        self.rows += 1;
+        self.bytes += bytes;
+        if cell.0.len() >= 500 || cell.1 >= 4 * 1024 * 1024 {
+            self.flush(key, out, budget, base, regions)?;
+        }
+        while self.rows > 10_000 || self.bytes > 64 * 1024 * 1024 {
+            let key = *self
+                .cells
+                .iter()
+                .max_by_key(|(key, (_, bytes))| (*bytes, **key))
+                .ok_or("historical buffer accounting")?
+                .0;
+            self.flush(key, out, budget, base, regions)?;
+        }
+        Ok(())
+    }
+}
+fn write_initial_cell(
+    out: &Path,
+    budget: &Budget,
+    key: (i32, i32),
+    rows: &[Value],
+    base: &Value,
+    regions: &mut Vec<Value>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for chunk in rows.chunks(500) {
+        let mut tile = base.clone();
+        tile["records"] = json!(chunk);
+        tile["coverage"]["indexed"] = json!(true);
+        tile["coverage"]["description"] = json!(coverage_description(&tile));
+        let bytes = serde_json::to_vec(&tile)?;
+        if bytes.len() > 8 * 1024 * 1024 {
+            return Err("tile byte cap".into());
+        }
+        let digest = hash(&bytes);
+        let name = format!("{digest}.json");
+        write_immutable(out, budget, &name, &bytes)?;
+        let (x, y) = key;
+        regions.push(json!({"url":name,"sha256":digest,"count":chunk.len(),"bytes":bytes.len(),"bounds":[x as f64/2.0,y as f64/2.0,(x+1) as f64/2.0,(y+1) as f64/2.0]}));
+    }
+    Ok(())
+}
+
 fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
     run_input(input, out, false)
 }
@@ -409,6 +493,7 @@ fn run_input(
     let mut overlap_batches = Vec::new();
     let mut overlap_count = 0usize;
     let mut differing_versions = 0usize;
+    let mut historical_cells = HistoricalCellBuffer::default();
     let mut source_rows = 0usize;
     let mut anonymous_quarantines = 0u64;
     let mut measurement_flagged = std::collections::BTreeSet::new();
@@ -478,10 +563,11 @@ fn run_input(
                 let object = content.as_object_mut().ok_or("historical record object")?;
                 object.remove("provenance");
                 object.remove("contentSha256");
-                if row["contentSha256"] != hash(&serde_json::to_vec(&content)?)
-                    || row["provenance"]["inputSha256"] != h.source["inputSha256"]
-                {
-                    return Err("historical record provenance/content integrity".into());
+                if row["contentSha256"] != hash(&serde_json::to_vec(&content)?) {
+                    return Err("historical record content hash mismatch".into());
+                }
+                if row["provenance"]["inputSha256"] != h.source["inputSha256"] {
+                    return Err("historical record input provenance mismatch".into());
                 }
                 let id = row["id"].as_str().ok_or("historical record id")?;
                 if let Some((digest, remaining, mapped)) = h.accepted.get_mut(id) {
@@ -580,21 +666,14 @@ fn run_input(
         if !duplicates.is_empty() {
             overlap_batches.push(json!({"candidateSha256":item["sha256"],"acquisitions":pack["acquisitions"],"duplicates":duplicates}));
         }
-        for ((x, y), mut rows) in cells {
-            rows.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
-            for chunk in rows.chunks(500) {
-                let mut tile = pack.clone();
-                tile["records"] = json!(chunk);
-                tile["coverage"]["indexed"] = json!(true);
-                tile["coverage"]["description"] = json!(coverage_description(&tile));
-                let bytes = serde_json::to_vec(&tile)?;
-                if bytes.len() > 8 * 1024 * 1024 {
-                    return Err("tile byte cap".into());
+        for (key, mut rows) in cells {
+            if historical {
+                for row in rows {
+                    historical_cells.add(key, row, out, budget, pack, &mut regions)?;
                 }
-                let digest = hash(&bytes);
-                let name = format!("{digest}.json");
-                write_immutable(out, budget, &name, &bytes)?;
-                regions.push(json!({"url": name,"sha256":digest,"count":chunk.len(),"bytes":bytes.len(),"bounds":[x as f64/2.0,y as f64/2.0,(x+1) as f64/2.0,(y+1) as f64/2.0]}));
+            } else {
+                rows.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+                write_initial_cell(out, budget, key, &rows, pack, &mut regions)?;
             }
         }
     }
@@ -617,6 +696,15 @@ fn run_input(
                 seen.len()
             )
             .into());
+        }
+    }
+    if let Some(h) = &historical_input {
+        let base = gev_us_groundwater::usgwd_map::pack(Vec::new(), &h.source, &h.manifest_sha256);
+        while let Some(key) = historical_cells.cells.keys().next().copied() {
+            historical_cells.flush(key, out, budget, &base, &mut regions)?;
+        }
+        if historical_cells.rows != 0 || historical_cells.bytes != 0 {
+            return Err("historical buffer drain accounting".into());
         }
     }
     regions = compact_details(out, budget, regions)?;
@@ -725,6 +813,36 @@ mod tests {
         let descriptor = dir.join("batches.json");
         fs::write(&descriptor, serde_json::to_vec(&json!({"snapshot":"offline-test","candidates":[{"path":"candidate.json","sha256":hash(&bytes)}]})).unwrap()).unwrap();
         descriptor
+    }
+    #[test]
+    fn historical_buffer_evicts_without_losing_accounted_source_ids() {
+        let dir = scratch("historical-buffer");
+        let budget = Budget::new();
+        let mut buffer = HistoricalCellBuffer::default();
+        let mut regions = Vec::new();
+        let base = json!({"coverage":{"complete":false},"acquisitions":[],"records":[]});
+        for i in 0..10_001 {
+            buffer
+                .add(
+                    (i % 720 - 360, i / 720 - 180),
+                    json!({"id":format!("SYN_{i}")}),
+                    &dir,
+                    &budget,
+                    &base,
+                    &mut regions,
+                )
+                .unwrap();
+            assert!(buffer.rows <= 10_000 && buffer.bytes <= 64 * 1024 * 1024);
+        }
+        assert_eq!(
+            buffer.rows
+                + regions
+                    .iter()
+                    .map(|r| r["count"].as_u64().unwrap() as usize)
+                    .sum::<usize>(),
+            10_001
+        );
+        assert_eq!(regions.len(), 1);
     }
     #[test]
     fn output_and_deadline_guards_refuse_before_immutable_write() {

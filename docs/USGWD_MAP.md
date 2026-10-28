@@ -4,6 +4,9 @@ Use a new `usgwd-field-quality-v2` normalization directory. Earlier generations
 and original CSV bytes remain immutable. Invalid measurements have an explicit
 field error and no usable numeric value; original strings remain available.
 Structural and identity conflicts still quarantine all affected versions.
+The already locked serde_json package enables `float_roundtrip` (no new package
+or version) so re-reading finite measurements preserves their exact binary64
+values and content hashes. The precision regression failed without this feature.
 
 After the documented offline build:
 
@@ -24,6 +27,11 @@ Each state index invocation is bounded by two million source rows, 10,016
 16 GiB logical output and 300 seconds. Use an external watchdog for blocking
 local I/O. A failed candidate leaves the last-good index pointer. There is no
 network, scheduler, publication or source acquisition in these commands.
+Historical rows share a bounded in-process cell buffer: flush thresholds are
+10,000 rows or 64 MiB serialized row data globally, and 500 rows or 4 MiB per
+cell. One bounded incoming row may cross a threshold before immediate flush.
+This reduces durable tiny-file writes; the existing final compaction, identity
+reconciliation, artifact limits and last-good pointer remain authoritative.
 
 The merge descriptor contains `states: [{state, path, sha256}]`, with each path
 exactly `states/<underscore_state_name>/index.json` under the new output root.

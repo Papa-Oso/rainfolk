@@ -36,3 +36,9 @@ test('historical dispatch cannot exempt a USGS subset from the original validato
   assert.throws(()=>validateHistoricalWellPack(pack,subset=>{calls++;assert.deepEqual(subset.records,[{id:'USGS-1234'}]);assert.equal(subset.acquisitions.length,1);throw new TypeError('strict USGS refusal');}));
   assert.equal(calls,1);assert.throws(()=>validateHistoricalWellPack(pack));
 });
+
+test('numeric native ID refuses before renderer string operations', () => {
+  const p=fixture();p.records[0].metadata.sourceRecordId=123;
+  p.records[0].id=`USGWD-${'a'.repeat(64)}-123`;p.records[0].metadata.id=p.records[0].id;
+  assert.throws(()=>validateHistoricalWellPack(p));
+});

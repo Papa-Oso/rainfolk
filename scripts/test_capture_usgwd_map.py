@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import random
 from pathlib import Path
 import subprocess
 import unittest
@@ -53,6 +54,24 @@ class UsgwdMapTests(unittest.TestCase):
         self.assertEqual(r['metadata']['sourceCoordinates']['crs'], 'EPSG:4269')
         self.assertEqual(r['coordinateReference'], 'EPSG:4326')
         self.assertEqual(r['metadata']['coordinateOperation']['operation'], 'EPSG:1188')
+
+    def test_finite_measurement_precision_survives_json_hash_round_trip(self):
+        rng=random.Random(20261028)
+        rows=[dict(self.rows[0], **{'Well ID':f'PRECISION_{i}', 'Well Depth (Feet)':repr(32+rng.random()*32)}) for i in range(100)]
+        paths=self.source(rows);self.run_import(paths,allowance=None)
+        out=self.root/'precision-map';result=self.index_run(self.root/'output/usgwd-manifest.json',out)
+        self.assertEqual(result['indexedRecords'],100)
+        _,packs=self.packs(out)
+        depths={r['metadata']['sourceRecordId']:r['metadata']['quantities']['Well Depth (Feet)']['value'] for p in packs for r in p['records']}
+        for row in rows:self.assertEqual(depths[row['Well ID']],float(row['Well Depth (Feet)']))
+
+    def test_buffered_coincident_records_remain_distinct_across_source_partitions(self):
+        rows=[dict(self.rows[0], **{'Well ID':f'BUFFERED_{i:05}'}) for i in range(1201)]
+        paths=self.source(rows);self.run_import(paths,allowance=None);out=self.root/'buffered-map'
+        self.index_run(self.root/'output/usgwd-manifest.json',out);index,packs=self.packs(out)
+        ids=[r['id'] for p in packs for r in p['records']]
+        self.assertEqual(index['indexedRecords'],1201);self.assertEqual(len(set(ids)),1201)
+        self.assertEqual(len(ids),1201)
 
     def test_global_conflicting_versions_do_not_leak_from_partitions_to_map(self):
         rows = [dict(self.rows[0], **{'Well ID': f'MAP_{i}'}) for i in range(200)]
