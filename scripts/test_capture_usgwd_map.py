@@ -73,6 +73,18 @@ class UsgwdMapTests(unittest.TestCase):
         self.assertEqual(index['indexedRecords'],1201);self.assertEqual(len(set(ids)),1201)
         self.assertEqual(len(ids),1201)
 
+    def test_dense_compaction_streams_coincident_and_split_cells_without_identity_loss(self):
+        rows=[dict(self.rows[0], **{'Well ID':f'DENSE_{i:05}'}) for i in range(4001)]
+        for i,row in enumerate(rows):
+            if i%3==0: row['Longitude']='-71.40'
+        paths=self.source(rows);self.run_import(paths,allowance=None);out=self.root/'dense-map'
+        first=self.index_run(self.root/'output/usgwd-manifest.json',out);index,packs=self.packs(out)
+        ids=[r['id'] for p in packs for r in p['records']]
+        self.assertEqual(index['indexedRecords'],4001);self.assertEqual(len(ids),4001);self.assertEqual(len(set(ids)),4001)
+        self.assertTrue(all(len(p['records'])<=256 for p in packs))
+        before=(out/'index.json').read_bytes();again=self.index_run(self.root/'output/usgwd-manifest.json',out)
+        self.assertEqual(first['indexSha256'],again['indexSha256']);self.assertEqual((out/'index.json').read_bytes(),before)
+
     def test_global_conflicting_versions_do_not_leak_from_partitions_to_map(self):
         rows = [dict(self.rows[0], **{'Well ID': f'MAP_{i}'}) for i in range(200)]
         rows += [rows[0], dict(rows[1], **{'Length of Screen (Feet)': '-5'})]

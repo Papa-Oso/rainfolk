@@ -55,6 +55,14 @@ USGS corpus is unchanged and is not silently merged with USGWD. Ambiguous state
 IDs remain aliases with unresolved source-system/physical identity. Nebraska and
 South Carolina remain acquisition blockers independent of other states.
 
+Dense historical half-degree cells are split by reading one hash-verified initial
+tile at a time (at most 500 rows / 8 MiB). Collection before recursive detail
+splitting is limited to 2,000 records. At maximum depth, coincident records are
+emitted in separate bounded packs rather than merged or loaded as one large cell.
+This retains the existing 300-second and 16 GiB logical-output guards. A guarded
+failure leaves the prior published index unchanged; it never authorizes a retry
+or a larger budget by itself.
+
 ## Coordinates and uncertainty
 
 Source longitude/latitude strings retain NAD83 EPSG:4269. Display coordinates use

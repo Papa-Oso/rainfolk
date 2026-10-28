@@ -269,8 +269,8 @@
     },
     {
       "path": "crates/us-groundwater/src/bin/well_index.rs",
-      "bytes": 57723,
-      "sha256": "01d4988e495599b54d2a1542d7c318e5a1f07c1f2cbc5af51c5f1349cb43ed41"
+      "bytes": 65007,
+      "sha256": "7ff0ef3ea82f5c800e80949fa84f025aa0a29f18a4cc09f84e2fcdfa328038fa"
     },
     {
       "path": "crates/us-groundwater/src/bin/well_jobs.rs",
@@ -384,8 +384,8 @@
     },
     {
       "path": "docs/USGWD_MAP.md",
-      "bytes": 6198,
-      "sha256": "8f29df413d68d3f619f57347a19f9092ccf50b1831dee7152c313176e743fe0a"
+      "bytes": 6712,
+      "sha256": "4e59bc02e55713a36f43f2fe6585f4c16e34dac48aa5de4b5e01489826f76786"
     },
     {
       "path": "docs/dependencies.json",
@@ -644,8 +644,8 @@
     },
     {
       "path": "scripts/test_capture_usgwd_map.py",
-      "bytes": 9522,
-      "sha256": "bcf86ad227aadfafd2cc63e27eb3cc223379bdb26ed7e5c98ff8e5d9c456e61d"
+      "bytes": 10475,
+      "sha256": "a9adf4bf2a47610b619d93a1d0803ebbd66dfbb99ade138f7d1c4d29d9af5d47"
     },
     {
       "path": "scripts/usgs-key.ps1",

@@ -316,10 +316,169 @@ fn split_detail(
     }
     Ok(())
 }
+// Historical rows have already passed global source-ID reconciliation. Split
+// dense groups by streaming existing bounded tiles before collecting detail rows.
+// This avoids a dense half-degree cell becoming an unbounded JSON tree in RAM.
+fn compact_historical_group(
+    out: &Path,
+    budget: &Budget,
+    tiles: Vec<Value>,
+    b: [f64; 4],
+    depth: u8,
+    regions: &mut Vec<Value>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let total = tiles.iter().try_fold(0u64, |n, t| {
+        n.checked_add(t["count"].as_u64().ok_or("historical stage count")?)
+            .ok_or("historical stage count overflow")
+    })?;
+    if total <= 2000 {
+        let mut rows = BTreeMap::new();
+        let mut base = Value::Null;
+        for tile in &tiles {
+            let pack = read_detail_stage(out, budget, tile)?;
+            if base.is_null() {
+                base = pack.clone();
+                base["records"] = json!([]);
+            }
+            if pack["acquisitions"] != base["acquisitions"] {
+                return Err("historical stage acquisition mismatch".into());
+            }
+            let acqs: Vec<Value> = serde_json::from_value(pack["acquisitions"].clone())?;
+            for r in pack["records"].as_array().unwrap() {
+                if rows
+                    .insert(
+                        r["id"]
+                            .as_str()
+                            .ok_or("historical stage identity")?
+                            .to_owned(),
+                        (r.clone(), acqs.clone()),
+                    )
+                    .is_some()
+                {
+                    return Err("duplicate historical stage ID".into());
+                }
+            }
+        }
+        if rows.len() as u64 != total {
+            return Err("historical stage conservation".into());
+        }
+        return split_detail(
+            out,
+            budget,
+            b,
+            rows.into_values().collect(),
+            &base,
+            depth,
+            regions,
+        );
+    }
+    let mx = (b[0] + b[2]) / 2.0;
+    let my = (b[1] + b[3]) / 2.0;
+    let mut children: [Vec<Value>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut observed = 0u64;
+    for tile in &tiles {
+        let mut pack = read_detail_stage(out, budget, tile)?;
+        let records = pack["records"].as_array_mut().unwrap();
+        let rows = std::mem::take(records);
+        observed += rows.len() as u64;
+        if depth == 8 {
+            let acqs: Vec<Value> = serde_json::from_value(pack["acquisitions"].clone())?;
+            split_detail(
+                out,
+                budget,
+                b,
+                rows.into_iter().map(|r| (r, acqs.clone())).collect(),
+                &pack,
+                depth,
+                regions,
+            )?;
+            continue;
+        }
+        let mut buckets: [Vec<Value>; 4] = std::array::from_fn(|_| Vec::new());
+        for row in rows {
+            let x = usize::from(
+                row["longitude"]
+                    .as_f64()
+                    .ok_or("historical stage longitude")?
+                    >= mx,
+            );
+            let y = usize::from(
+                row["latitude"]
+                    .as_f64()
+                    .ok_or("historical stage latitude")?
+                    >= my,
+            );
+            buckets[y * 2 + x].push(row);
+        }
+        for (i, rows) in buckets.into_iter().enumerate() {
+            if rows.is_empty() {
+                continue;
+            }
+            let bounds = [
+                if i % 2 == 0 { b[0] } else { mx },
+                if i / 2 == 0 { b[1] } else { my },
+                if i % 2 == 0 { mx } else { b[2] },
+                if i / 2 == 0 { my } else { b[3] },
+            ];
+            pack["records"] = json!(rows);
+            let bytes = serde_json::to_vec(&pack)?;
+            if bytes.len() > 8 * 1024 * 1024 {
+                return Err("historical stage byte cap".into());
+            }
+            let digest = hash(&bytes);
+            let name = format!("{digest}.json");
+            write_immutable(out, budget, &name, &bytes)?;
+            children[i].push(json!({"url":name,"sha256":digest,"bounds":bounds,"count":rows.len(),"bytes":bytes.len()}));
+        }
+    }
+    if observed != total {
+        return Err("historical stage input conservation".into());
+    }
+    for child in children {
+        if child.is_empty() {
+            continue;
+        }
+        let bounds = serde_json::from_value(child[0]["bounds"].clone())?;
+        compact_historical_group(out, budget, child, bounds, depth + 1, regions)?;
+    }
+    if regions.len() > 40000 {
+        return Err("detail manifest entry cap".into());
+    }
+    Ok(())
+}
+fn read_detail_stage(
+    out: &Path,
+    budget: &Budget,
+    tile: &Value,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    budget.check()?;
+    let digest = tile["sha256"].as_str().ok_or("historical stage hash")?;
+    if digest.len() != 64
+        || !digest.bytes().all(|b| b.is_ascii_hexdigit())
+        || tile["url"] != format!("{digest}.json")
+    {
+        return Err("historical stage path".into());
+    }
+    let path = out.join(tile["url"].as_str().unwrap());
+    if fs::metadata(&path)?.len() > 8 * 1024 * 1024 {
+        return Err("historical stage file cap".into());
+    }
+    let bytes = fs::read(path)?;
+    if hash(&bytes) != digest || tile["bytes"] != bytes.len() {
+        return Err("historical stage integrity".into());
+    }
+    let pack: Value = serde_json::from_slice(&bytes)?;
+    let rows = pack["records"].as_array().ok_or("historical stage rows")?;
+    if rows.len() > 500 || tile["count"] != rows.len() {
+        return Err("historical stage row cap".into());
+    }
+    Ok(pack)
+}
 fn compact_details(
     out: &Path,
     budget: &Budget,
     old: Vec<Value>,
+    historical: bool,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
     let mut groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for tile in old {
@@ -331,6 +490,16 @@ fn compact_details(
     let mut regions = Vec::new();
     for tiles in groups.values() {
         let b: [f64; 4] = serde_json::from_value(tiles[0]["bounds"].clone())?;
+        if historical
+            && tiles
+                .iter()
+                .map(|t| t["count"].as_u64().unwrap_or(0))
+                .sum::<u64>()
+                > 2000
+        {
+            compact_historical_group(out, budget, tiles.clone(), b, 0, &mut regions)?;
+            continue;
+        }
         let mut rows = BTreeMap::new();
         let mut base = Value::Null;
         for tile in tiles {
@@ -707,7 +876,7 @@ fn run_input(
             return Err("historical buffer drain accounting".into());
         }
     }
-    regions = compact_details(out, budget, regions)?;
+    regions = compact_details(out, budget, regions, historical)?;
     if regions
         .iter()
         .map(|r| r["count"].as_u64().unwrap())
@@ -843,6 +1012,28 @@ mod tests {
             10_001
         );
         assert_eq!(regions.len(), 1);
+    }
+    #[test]
+    fn historical_stage_refuses_tampering_oversized_rows_and_expired_budget() {
+        let dir = scratch("historical-stage");
+        let budget = Budget::new();
+        let pack = json!({"records":vec![json!({"id":"x"});501],"acquisitions":[]});
+        let bytes = serde_json::to_vec(&pack).unwrap();
+        let digest = hash(&bytes);
+        let name = format!("{digest}.json");
+        write_immutable(&dir, &budget, &name, &bytes).unwrap();
+        let reference = json!({"url":name,"sha256":digest,"bytes":bytes.len(),"count":501});
+        assert!(read_detail_stage(&dir, &budget, &reference).is_err());
+        let mut wrong = reference.clone();
+        wrong["url"] = json!("../outside.json");
+        assert!(read_detail_stage(&dir, &budget, &wrong).is_err());
+        let expired = Budget {
+            started: std::time::Instant::now() - std::time::Duration::from_secs(301),
+            bytes: std::cell::Cell::new(0),
+        };
+        assert!(read_detail_stage(&dir, &expired, &reference).is_err());
+        fs::write(dir.join(name), b"{}").unwrap();
+        assert!(read_detail_stage(&dir, &budget, &reference).is_err());
     }
     #[test]
     fn output_and_deadline_guards_refuse_before_immutable_write() {
@@ -1059,8 +1250,11 @@ mod tests {
             write_immutable(&dir, &Budget::new(), &url, &bytes).unwrap();
             old.push(json!({"bounds":[0.0,0.0,0.5,0.5],"url":url,"sha256":digest}));
         }
-        let compact = compact_details(&dir, &Budget::new(), old.clone()).unwrap();
-        assert_eq!(compact, compact_details(&dir, &Budget::new(), old).unwrap());
+        let compact = compact_details(&dir, &Budget::new(), old.clone(), false).unwrap();
+        assert_eq!(
+            compact,
+            compact_details(&dir, &Budget::new(), old, false).unwrap()
+        );
         assert_eq!(
             compact
                 .iter()
