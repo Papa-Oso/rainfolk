@@ -65,7 +65,7 @@ pub(super) fn run(input: &Path, out: &Path) -> Result<Value, Error> {
         if r["sha256"] != hash(&b) {
             return Err("merge child index integrity".into());
         }
-        let i = gev_us_groundwater::texas_sdr::decode_capture_json(&b)?;
+        let i = gev_us_groundwater::texas_sdr::decode_artifact_json(&b, 8 * 1024 * 1024)?;
         if i["schemaVersion"] != 1
             || i["kind"] != "gev-well-spatial-index"
             || i["sourceKind"] != "USGWD"

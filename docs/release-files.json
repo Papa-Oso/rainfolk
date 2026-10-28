@@ -319,8 +319,8 @@
     },
     {
       "path": "crates/us-groundwater/src/texas_sdr.rs",
-      "bytes": 26305,
-      "sha256": "8b71a34b2dc256fe52e372c7e8a257e0e7806cd9bc49642d211c65e4b9b55a6f"
+      "bytes": 26965,
+      "sha256": "aa515223e7213000c16edb48000be120628ba2c102379e81db034b112ca7c10d"
     },
     {
       "path": "crates/us-groundwater/src/usgwd.rs",
@@ -339,13 +339,13 @@
     },
     {
       "path": "crates/us-groundwater/src/well_index_merge.rs",
-      "bytes": 12652,
-      "sha256": "b97a817f84fd09246ccecb9b93220dff19c528cca462fff74330b4a896c06a05"
+      "bytes": 12670,
+      "sha256": "facb0b1bff41eb5caeecc70721b42fb9c15bb3031802e26e7c5c85aa1cda340e"
     },
     {
       "path": "crates/us-groundwater/tests/texas_sdr.rs",
-      "bytes": 29910,
-      "sha256": "7927e11b1e724901ad62a3f183f044428f9847775cc2e11ff2b7ba7b85c1debf"
+      "bytes": 30597,
+      "sha256": "e30ab612c181fcf1a8baa2f82bfa9c1c036f53e4410b620e910a05caa305d717"
     },
     {
       "path": "docs/ARTIFACT_CONTRACT.md",
@@ -644,8 +644,8 @@
     },
     {
       "path": "scripts/test_capture_usgwd_map.py",
-      "bytes": 10475,
-      "sha256": "a9adf4bf2a47610b619d93a1d0803ebbd66dfbb99ade138f7d1c4d29d9af5d47"
+      "bytes": 11679,
+      "sha256": "7a37812d7f6166efdb4dfb68e299a98ca2b8e8b8a30e0c5a10edc737f1267cdd"
     },
     {
       "path": "scripts/usgs-key.ps1",

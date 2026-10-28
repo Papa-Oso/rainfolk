@@ -380,6 +380,18 @@ pub fn decode_capture_json(bytes: &[u8]) -> Result<Value, String> {
     serde_json::from_slice(bytes).map_err(|_| "invalid SDR JSON".into())
 }
 
+/// Decode a hash-pinned local artifact under its caller's explicit byte limit.
+/// Source captures retain their separate, lower cap in `decode_capture_json`.
+pub fn decode_artifact_json(bytes: &[u8], limit: usize) -> Result<Value, String> {
+    if limit == 0 || limit > 8 * 1024 * 1024 || bytes.len() > limit {
+        return Err("artifact JSON input byte limit".into());
+    }
+    // Reuse the same duplicate-member visitor without exposing source excerpts.
+    serde_json::from_slice::<UniqueMembers>(bytes)
+        .map_err(|_| "invalid artifact JSON or duplicate member")?;
+    serde_json::from_slice(bytes).map_err(|_| "invalid artifact JSON".into())
+}
+
 pub fn normalize(bytes: &[u8]) -> Result<Value, String> {
     let input = decode_capture_json(bytes)?;
     let public = input["kind"] == "rainfolk-texas-sdr-public-capture";

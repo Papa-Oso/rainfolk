@@ -145,6 +145,22 @@ class UsgwdMapTests(unittest.TestCase):
         self.index_run(self.root/(state+'-'+native)/'usgwd-manifest.json', out)
         return dict(state=state, path=f'states/{state.replace(" ", "_")}/index.json', sha256=hashlib.sha256((out/'index.json').read_bytes()).hexdigest())
 
+    def test_federation_uses_its_existing_child_index_cap_and_rejects_duplicate_members(self):
+        out=self.root/'sized-national';ref=self.make_state_index('New Hampshire','SIZED_SOURCE',out)
+        child=out/ref['path'];original=child.read_bytes();descriptor=self.root/'sized-states.json'
+        def merge(raw):
+            child.write_bytes(raw);ref['sha256']=hashlib.sha256(raw).hexdigest()
+            descriptor.write_text(json.dumps(dict(states=[ref])))
+            return subprocess.run([str(INDEX),'--merge-usgwd',str(descriptor),str(out)],capture_output=True)
+        result=merge(original+b' '*(1024*1024+1));self.assertEqual(result.returncode,0,result.stderr.decode())
+        self.assertEqual(json.loads((out/'index.json').read_bytes())['indexedRecords'],1)
+        before=(out/'index.json').read_bytes()
+        duplicate=original[:-1]+b',"sourceState":"New Hampshire"}'+b' '*(1024*1024+1)
+        result=merge(duplicate);self.assertNotEqual(result.returncode,0)
+        self.assertEqual((out/'index.json').read_bytes(),before)
+        result=merge(original+b' '*(8*1024*1024));self.assertNotEqual(result.returncode,0)
+        self.assertEqual((out/'index.json').read_bytes(),before)
+
     def test_state_federation_combines_overlapping_cells_without_location_dedup(self):
         out = self.root/'national'
         states = [self.make_state_index('New Hampshire', 'NH_SOURCE_A', out), self.make_state_index('Rhode Island', 'RI_SOURCE_A', out)]
