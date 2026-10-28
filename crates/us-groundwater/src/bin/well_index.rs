@@ -6,6 +6,39 @@ fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+// Shared across every immutable artifact in one index invocation.
+struct Budget {
+    started: std::time::Instant,
+    bytes: std::cell::Cell<u64>,
+}
+impl Budget {
+    fn new() -> Self {
+        Self {
+            started: std::time::Instant::now(),
+            bytes: std::cell::Cell::new(0),
+        }
+    }
+    fn check(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.started.elapsed().as_secs() >= 300 {
+            return Err("index 300-second deadline".into());
+        }
+        Ok(())
+    }
+    fn charge(&self, bytes: usize) -> Result<(), Box<dyn std::error::Error>> {
+        self.check()?;
+        let next = self
+            .bytes
+            .get()
+            .checked_add(bytes as u64)
+            .ok_or("index output overflow")?;
+        if next > 16 * 1024 * 1024 * 1024 {
+            return Err("index 16-GiB logical output cap".into());
+        }
+        self.bytes.set(next);
+        Ok(())
+    }
+}
+
 // One writer owns both immutable publication and the mutable index pointer.
 // A process crash leaves the lock behind: continuation fails closed until an
 // operator has established that no writer survives. Never guess from its age.
@@ -39,6 +72,12 @@ impl Drop for IndexWriterLock {
 }
 
 fn coverage_description(pack: &Value) -> String {
+    if pack["acquisitions"].as_array().is_some_and(|a| {
+        a.iter()
+            .any(|a| a["collection"] == "usgwd-historical-baseline")
+    }) {
+        return "Historical source catalog records; physical-well identity unresolved. Locations unverified; approximate datum conversion. No water-level observations or verified current activity/water safety.".into();
+    }
     let readings = pack["records"].as_array().is_some_and(|records| {
         records
             .iter()
@@ -73,7 +112,13 @@ fn coverage_description(pack: &Value) -> String {
 }
 // Never open a referenced content-addressed file for writing. Interrupted
 // staging leaves only an unreferenced temporary file; publication is a rename.
-fn write_immutable(out: &Path, name: &str, bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+fn write_immutable(
+    out: &Path,
+    budget: &Budget,
+    name: &str,
+    bytes: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    budget.charge(bytes.len())?;
     let target = out.join(name);
     if target.exists() {
         if hash(&fs::read(&target)?) != hash(bytes) {
@@ -97,14 +142,18 @@ fn write_immutable(out: &Path, name: &str, bytes: &[u8]) -> Result<(), Box<dyn s
 }
 type DetailRow = (Value, Vec<Value>);
 
-fn publish_count_file(out: &Path, value: &Value) -> Result<Value, Box<dyn std::error::Error>> {
+fn publish_count_file(
+    out: &Path,
+    budget: &Budget,
+    value: &Value,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let bytes = serde_json::to_vec(value)?;
     if bytes.len() > 8 * 1024 * 1024 {
         return Err("partitioned aggregate byte cap".into());
     }
     let digest = hash(&bytes);
     let name = format!("{digest}.counts.json");
-    write_immutable(out, &name, &bytes)?;
+    write_immutable(out, budget, &name, &bytes)?;
     Ok(json!({"url":name,"sha256":digest,"bytes":bytes.len()}))
 }
 
@@ -112,6 +161,7 @@ fn publish_count_file(out: &Path, value: &Value) -> Result<Value, Box<dyn std::e
 // complete fine subtrees anchored to its existing two-degree parent cells.
 fn publish_partitioned_counts(
     out: &Path,
+    budget: &Budget,
     levels: &[Value],
     total: usize,
 ) -> Result<Value, Box<dyn std::error::Error>> {
@@ -120,6 +170,7 @@ fn publish_partitioned_counts(
     }
     let overview = publish_count_file(
         out,
+        budget,
         &json!({"schemaVersion":1,"kind":"gev-well-count-grids","centerMethod":"record-mean","total":total,"levels":&levels[..4]}),
     )?;
     let parent_key = |bounds: &Value| -> Result<(i32, i32), Box<dyn std::error::Error>> {
@@ -173,7 +224,7 @@ fn publish_partitioned_counts(
                 }
             }
             let chunk = json!({"schemaVersion":1,"kind":"gev-well-count-grids","centerMethod":"record-mean","total":count,"parentBounds":parent["bounds"],"levels":[{"degrees":level["degrees"],"total":count,"cells":cells}]});
-            let mut reference = publish_count_file(out, &chunk)?;
+            let mut reference = publish_count_file(out, budget, &chunk)?;
             reference["bounds"] = parent["bounds"].clone();
             reference["count"] = json!(count);
             reference["cellCount"] = json!(cells.len());
@@ -191,6 +242,7 @@ fn publish_partitioned_counts(
 }
 fn split_detail(
     out: &Path,
+    budget: &Budget,
     b: [f64; 4],
     rows: Vec<DetailRow>,
     base: &Value,
@@ -223,6 +275,7 @@ fn split_detail(
                 let y = i / 2;
                 split_detail(
                     out,
+                    budget,
                     [
                         if x == 0 { b[0] } else { mx },
                         if y == 0 { b[1] } else { my },
@@ -257,13 +310,17 @@ fn split_detail(
             }
             let digest = hash(&bytes);
             let name = format!("{digest}.json");
-            write_immutable(out, &name, &bytes)?;
+            write_immutable(out, budget, &name, &bytes)?;
             regions.push(json!({"url":name,"sha256":digest,"bounds":b,"count":chunk.len(),"bytes":bytes.len(),"depth":depth}));
         }
     }
     Ok(())
 }
-fn compact_details(out: &Path, old: Vec<Value>) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+fn compact_details(
+    out: &Path,
+    budget: &Budget,
+    old: Vec<Value>,
+) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
     let mut groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for tile in old {
         groups
@@ -277,6 +334,7 @@ fn compact_details(out: &Path, old: Vec<Value>) -> Result<Vec<Value>, Box<dyn st
         let mut rows = BTreeMap::new();
         let mut base = Value::Null;
         for tile in tiles {
+            budget.check()?;
             let bytes = fs::read(out.join(tile["url"].as_str().unwrap()))?;
             if hash(&bytes) != tile["sha256"].as_str().unwrap() {
                 return Err("detail input changed".into());
@@ -299,7 +357,15 @@ fn compact_details(out: &Path, old: Vec<Value>) -> Result<Vec<Value>, Box<dyn st
                 }
             }
         }
-        split_detail(out, b, rows.into_values().collect(), &base, 0, &mut regions)?;
+        split_detail(
+            out,
+            budget,
+            b,
+            rows.into_values().collect(),
+            &base,
+            0,
+            &mut regions,
+        )?;
         if regions.len() > 40000 {
             return Err("detail manifest entry cap".into());
         }
@@ -307,11 +373,31 @@ fn compact_details(out: &Path, old: Vec<Value>) -> Result<Vec<Value>, Box<dyn st
     Ok(regions)
 }
 fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
-    let descriptor: Value = serde_json::from_slice(&fs::read(input)?)?;
+    run_input(input, out, false)
+}
+fn run_input(
+    input: &Path,
+    out: &Path,
+    historical: bool,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let budget_owner = Budget::new();
+    let budget = &budget_owner;
+    let started = budget.started;
+    let mut historical_input = if historical {
+        Some(gev_us_groundwater::usgwd_map::Input::open(input, started)?)
+    } else {
+        None
+    };
+    let descriptor: Value = match &historical_input {
+        Some(h) => {
+            json!({"snapshot":{"source":"USGWD","releaseSha256":h.source["releaseSha256"],"normalizationManifestSha256":h.manifest_sha256,"catalogAccounting":h.accounting,"meaning":"Historical source records; physical-well identity unresolved; no proximity merge"},"candidates":h.candidates})
+        }
+        None => serde_json::from_slice(&fs::read(input)?)?,
+    };
     let candidates = descriptor["candidates"]
         .as_array()
         .ok_or("missing candidates")?;
-    if candidates.len() > 2000 {
+    if candidates.len() > if historical { 10_016 } else { 2000 } {
         return Err("candidate limit".into());
     }
     let _writer = IndexWriterLock::acquire(out)?;
@@ -323,7 +409,10 @@ fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
     let mut overlap_batches = Vec::new();
     let mut overlap_count = 0usize;
     let mut differing_versions = 0usize;
-    let mut fallback = Value::Null;
+    let mut source_rows = 0usize;
+    let mut anonymous_quarantines = 0u64;
+    let mut measurement_flagged = std::collections::BTreeSet::new();
+    let mut fallback = historical_input.as_ref().map_or(Value::Null, |h| gev_us_groundwater::usgwd_map::pack(Vec::new(), &h.source, &h.manifest_sha256)["acquisitions"][0].clone());
     for (candidate_number, item) in candidates.iter().enumerate() {
         if candidate_number % 100 == 0 {
             eprintln!(
@@ -332,30 +421,128 @@ fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
                 candidates.len()
             );
         }
-        let path = input
-            .parent()
-            .unwrap()
-            .join(item["path"].as_str().ok_or("missing path")?);
-        if fs::metadata(&path)?.len() > 8 * 1024 * 1024 {
-            return Err("candidate byte cap".into());
+        if started.elapsed().as_secs() >= 300 {
+            return Err("index 300-second deadline".into());
         }
-        let raw = fs::read(path)?;
-        if Some(hash(&raw).as_str()) != item["sha256"].as_str() {
-            return Err("candidate hash mismatch".into());
-        }
-        let candidate: Value = serde_json::from_slice(&raw)?;
-        gev_us_groundwater::validate_bundle(&candidate)?;
-        let pack = &candidate["layerPack"];
+        let pack_value;
+        let candidate;
+        let pack = if let Some(h) = &mut historical_input {
+            let part = h.partition(item)?;
+            let rows = part["records"]
+                .as_array()
+                .ok_or("historical partition records")?;
+            let quarantine = part["quarantine"]
+                .as_array()
+                .ok_or("historical partition quarantine")?;
+            if rows.len() + quarantine.len() > 200 {
+                return Err("historical partition row cap".into());
+            }
+            let count = rows.len() + quarantine.len();
+            if part["firstRow"] != source_rows + 2 || part["lastRow"] != source_rows + count + 1 {
+                return Err("historical source row interval".into());
+            }
+            let mut ordinals: Vec<u64> = rows
+                .iter()
+                .map(|r| r["provenance"]["sourceRow"].as_u64().unwrap_or(0))
+                .chain(
+                    quarantine
+                        .iter()
+                        .map(|q| q["sourceRow"].as_u64().unwrap_or(0)),
+                )
+                .collect();
+            ordinals.sort();
+            if ordinals
+                != ((source_rows + 2) as u64..=(source_rows + count + 1) as u64).collect::<Vec<_>>()
+            {
+                return Err("historical source row ordinal conservation".into());
+            }
+            for row in quarantine {
+                if let Some(id) = row["sourceId"].as_str() {
+                    let n = h
+                        .quarantined
+                        .get_mut(id)
+                        .ok_or("historical quarantine index membership")?;
+                    *n = n
+                        .checked_sub(1)
+                        .ok_or("historical quarantine occurrence excess")?;
+                } else if row["sourceId"].is_null() {
+                    anonymous_quarantines += 1;
+                } else {
+                    return Err("historical quarantine identity".into());
+                }
+            }
+            source_rows += count;
+            let mut records = Vec::new();
+            for row in rows {
+                let mut content = row.clone();
+                let object = content.as_object_mut().ok_or("historical record object")?;
+                object.remove("provenance");
+                object.remove("contentSha256");
+                if row["contentSha256"] != hash(&serde_json::to_vec(&content)?)
+                    || row["provenance"]["inputSha256"] != h.source["inputSha256"]
+                {
+                    return Err("historical record provenance/content integrity".into());
+                }
+                let id = row["id"].as_str().ok_or("historical record id")?;
+                if let Some((digest, remaining, mapped)) = h.accepted.get_mut(id) {
+                    *remaining = remaining
+                        .checked_sub(1)
+                        .ok_or("historical accepted occurrence excess")?;
+                    if row["mapEligible"] != *mapped {
+                        return Err("historical accepted map eligibility mismatch".into());
+                    }
+                    if row["quantityErrors"]
+                        .as_array()
+                        .is_some_and(|e| !e.is_empty())
+                    {
+                        measurement_flagged.insert(id.to_owned());
+                    }
+                    if row["contentSha256"] != digest.as_str() {
+                        return Err("historical authoritative index mismatch".into());
+                    }
+                    if let Some(record) = gev_us_groundwater::usgwd_map::record(row, &h.source)? {
+                        records.push(record);
+                    }
+                } else {
+                    let remaining = h
+                        .quarantined
+                        .get_mut(id)
+                        .ok_or("historical record index membership")?;
+                    *remaining = remaining
+                        .checked_sub(1)
+                        .ok_or("historical poisoned occurrence excess")?;
+                }
+            }
+            pack_value =
+                gev_us_groundwater::usgwd_map::pack(records, &h.source, &h.manifest_sha256);
+            &pack_value
+        } else {
+            let path = input
+                .parent()
+                .unwrap()
+                .join(item["path"].as_str().ok_or("missing path")?);
+            if fs::metadata(&path)?.len() > 8 * 1024 * 1024 {
+                return Err("candidate byte cap".into());
+            }
+            let raw = fs::read(path)?;
+            if Some(hash(&raw).as_str()) != item["sha256"].as_str() {
+                return Err("candidate hash mismatch".into());
+            }
+            candidate = serde_json::from_slice::<Value>(&raw)?;
+            gev_us_groundwater::validate_bundle(&candidate)?;
+            &candidate["layerPack"]
+        };
         if fallback.is_null() {
             fallback = pack["acquisitions"][0].clone();
         }
         let mut cells: BTreeMap<(i32, i32), Vec<Value>> = BTreeMap::new();
         let mut duplicates = Vec::new();
         for r in pack["records"].as_array().ok_or("missing records")? {
+            budget.check()?;
             let id = r["id"].as_str().ok_or("missing id")?;
             let record_hash = hash(&serde_json::to_vec(r)?);
             if let Some((retained_hash, retained_candidate)) = seen.get(id) {
-                if item["overlapPolicy"] != "retain-first-with-audit" {
+                if !historical && item["overlapPolicy"] != "retain-first-with-audit" {
                     return Err(format!("duplicate source ID: {id}").into());
                 }
                 overlap_count += 1;
@@ -406,9 +593,18 @@ fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
                 }
                 let digest = hash(&bytes);
                 let name = format!("{digest}.json");
-                write_immutable(out, &name, &bytes)?;
+                write_immutable(out, budget, &name, &bytes)?;
                 regions.push(json!({"url": name,"sha256":digest,"count":chunk.len(),"bytes":bytes.len(),"bounds":[x as f64/2.0,y as f64/2.0,(x+1) as f64/2.0,(y+1) as f64/2.0]}));
             }
+        }
+    }
+    if let Some(h) = &historical_input {
+        if h.accounting["inputRows"] != source_rows
+            || h.accepted.values().any(|(_, remaining, _)| *remaining != 0)
+            || h.quarantined.values().any(|remaining| *remaining != 0)
+            || anonymous_quarantines != h.anonymous_quarantines
+        {
+            return Err("historical partition row conservation".into());
         }
     }
     if fallback.is_null() {
@@ -423,7 +619,7 @@ fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
             .into());
         }
     }
-    regions = compact_details(out, regions)?;
+    regions = compact_details(out, budget, regions)?;
     if regions
         .iter()
         .map(|r| r["count"].as_u64().unwrap())
@@ -436,7 +632,7 @@ fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
     let audit_bytes = serde_json::to_vec(&audit)?;
     let audit_hash = hash(&audit_bytes);
     let audit_name = format!("{audit_hash}.audit.json");
-    write_immutable(out, &audit_name, &audit_bytes)?;
+    write_immutable(out, budget, &audit_name, &audit_bytes)?;
     regions.sort_by_key(|v| v["url"].as_str().unwrap().to_owned());
     let aggregate_levels: Vec<Value> = grids.iter().zip(sizes).map(|(grid,size)| {
         let total: u64 = grid.values().map(|v|v.0).sum();
@@ -444,9 +640,24 @@ fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
         let cells: Vec<Value> = grid.iter().map(|(&(x,y),&(count,lon_sum,lat_sum))| json!({"center":[lon_sum/count as f64,lat_sum/count as f64],"bounds":[x as f64*size-180.0,y as f64*size-90.0,((x+1) as f64*size-180.0).min(180.0),((y+1) as f64*size-90.0).min(90.0)],"count":count})).collect();
         json!({"degrees":size,"total":total,"cells":cells})
     }).collect();
-    let aggregate_reference = publish_partitioned_counts(out, &aggregate_levels, seen.len())?;
-    let index = json!({"schemaVersion":1,"kind":"gev-well-spatial-index","coverageComplete":false,"snapshot":descriptor["snapshot"],"indexedRecords":seen.len(),"overlapAudit":{"url":audit_name,"sha256":audit_hash,"overlapIds":overlap_count,"differingSerializedVersions":differing_versions},"fallbackAcquisition":fallback,"regions":regions,"aggregates":aggregate_reference});
+    let aggregate_reference =
+        publish_partitioned_counts(out, budget, &aggregate_levels, seen.len())?;
+    let mut index = json!({"schemaVersion":1,"kind":"gev-well-spatial-index","coverageComplete":false,"snapshot":descriptor["snapshot"],"indexedRecords":seen.len(),"overlapAudit":{"url":audit_name,"sha256":audit_hash,"overlapIds":overlap_count,"differingSerializedVersions":differing_versions},"fallbackAcquisition":fallback,"regions":regions,"aggregates":aggregate_reference});
+    if let Some(h) = &historical_input {
+        index["sourceKind"] = json!("USGWD");
+        index["normalizationPolicy"] = json!(gev_us_groundwater::usgwd_map::POLICY);
+        index["catalogAccounting"] = h.accounting.clone();
+        index["catalogRecords"] = h.accounting["acceptedRecords"].clone();
+        index["unmappedRecords"] =
+            json!(h.accounting["acceptedRecords"].as_u64().unwrap() - seen.len() as u64);
+        index["measurementFlaggedCatalogRecords"] = json!(measurement_flagged.len());
+        index["mappingExclusions"] = json!({"sourceCoordinatesOrQuality":h.accounting["nonmappedRecords"],"unsupportedDatumOperationArea":h.accounting["mapEligibleRecords"].as_u64().unwrap().checked_sub(seen.len() as u64).ok_or("historical map eligibility conservation")?});
+        index["distinctPhysicalWells"] = Value::Null;
+        index["sourceState"] = h.source["state"].clone();
+        index["identityRange"] = json!({"first":h.accepted.keys().next(),"last":h.accepted.keys().next_back(),"releaseSha256":h.source["releaseSha256"],"meaning":"release-scoped catalog IDs, not physical wells"});
+    }
     let bytes = serde_json::to_vec(&index)?;
+    budget.charge(bytes.len())?;
     if bytes.len() > 8 * 1024 * 1024 {
         return Err("index byte cap".into());
     }
@@ -459,7 +670,12 @@ fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
     // Interrupted/invalid runs leave the previous index usable; orphan tiles are harmless.
     if out.join("index.json").exists() {
         let previous = fs::read(out.join("index.json"))?;
-        write_immutable(out, &format!("{}.index.json", hash(&previous)), &previous)?;
+        write_immutable(
+            out,
+            budget,
+            &format!("{}.index.json", hash(&previous)),
+            &previous,
+        )?;
     }
     let pending = out.join("index.pending");
     fs::write(&pending, &bytes)?;
@@ -471,6 +687,9 @@ fn run(input: &Path, out: &Path) -> Result<Value, Box<dyn std::error::Error>> {
     fs::rename(&pending, out.join("index.json")).map_err(|e| format!("index replacement: {e}"))?;
     Ok(json!({"indexedRecords":seen.len(),"packs":regions.len(),"indexSha256":hash(&bytes)}))
 }
+#[path = "../well_index_merge.rs"]
+mod federation;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -508,6 +727,20 @@ mod tests {
         descriptor
     }
     #[test]
+    fn output_and_deadline_guards_refuse_before_immutable_write() {
+        let dir = scratch("budget");
+        let budget = Budget::new();
+        budget.bytes.set(16 * 1024 * 1024 * 1024);
+        assert!(write_immutable(&dir, &budget, "refused.json", b"x").is_err());
+        assert!(!dir.join("refused.json").exists());
+        let expired = Budget {
+            started: std::time::Instant::now() - std::time::Duration::from_secs(301),
+            bytes: std::cell::Cell::new(0),
+        };
+        assert!(write_immutable(&dir, &expired, "expired.json", b"x").is_err());
+        assert!(!dir.join("expired.json").exists());
+    }
+    #[test]
     fn partitioned_levels_conserve_all_cells_and_reuse_unchanged_subtrees() {
         let dir = scratch("partitioned");
         let make_levels = |points: &[(f64, f64)]| -> Vec<Value> {
@@ -530,7 +763,8 @@ mod tests {
             (179.99, 1.0),
         ];
         let levels = make_levels(&points);
-        let reference = publish_partitioned_counts(&dir, &levels, points.len()).unwrap();
+        let reference =
+            publish_partitioned_counts(&dir, &Budget::new(), &levels, points.len()).unwrap();
         assert_eq!(reference["schemaVersion"], 2);
         let overview: Value = serde_json::from_slice(
             &fs::read(dir.join(reference["overview"]["url"].as_str().unwrap())).unwrap(),
@@ -574,12 +808,14 @@ mod tests {
             .modified()
             .unwrap();
         assert_eq!(
-            publish_partitioned_counts(&dir, &levels, points.len()).unwrap(),
+            publish_partitioned_counts(&dir, &Budget::new(), &levels, points.len()).unwrap(),
             reference
         );
         let mut extra = points.to_vec();
         extra.push((100.0, 30.0));
-        let updated = publish_partitioned_counts(&dir, &make_levels(&extra), extra.len()).unwrap();
+        let updated =
+            publish_partitioned_counts(&dir, &Budget::new(), &make_levels(&extra), extra.len())
+                .unwrap();
         assert!(
             updated["levels"][0]["chunks"]
                 .as_array()
@@ -596,7 +832,7 @@ mod tests {
         let mut bad = levels;
         bad[4]["cells"][0]["count"] = json!(999);
         fs::write(dir.join("index.json"), b"last good pointer").unwrap();
-        assert!(publish_partitioned_counts(&dir, &bad, points.len()).is_err());
+        assert!(publish_partitioned_counts(&dir, &Budget::new(), &bad, points.len()).is_err());
         assert_eq!(
             fs::read(dir.join("index.json")).unwrap(),
             b"last good pointer"
@@ -677,9 +913,9 @@ mod tests {
             let bytes = format!("complete {suffix}");
             let name = format!("{}.{}", hash(bytes.as_bytes()), suffix);
             fs::write(out.join(format!("{name}.interrupted.pending")), b"partial").unwrap();
-            write_immutable(&out, &name, bytes.as_bytes()).unwrap();
+            write_immutable(&out, &Budget::new(), &name, bytes.as_bytes()).unwrap();
             assert_eq!(fs::read(out.join(&name)).unwrap(), bytes.as_bytes());
-            assert!(write_immutable(&out, &name, b"changed bytes").is_err());
+            assert!(write_immutable(&out, &Budget::new(), &name, b"changed bytes").is_err());
             assert_eq!(fs::read(out.join(&name)).unwrap(), bytes.as_bytes());
         }
     }
@@ -702,11 +938,11 @@ mod tests {
             let bytes = serde_json::to_vec(&pack).unwrap();
             let digest = hash(&bytes);
             let url = format!("{digest}.json");
-            write_immutable(&dir, &url, &bytes).unwrap();
+            write_immutable(&dir, &Budget::new(), &url, &bytes).unwrap();
             old.push(json!({"bounds":[0.0,0.0,0.5,0.5],"url":url,"sha256":digest}));
         }
-        let compact = compact_details(&dir, old.clone()).unwrap();
-        assert_eq!(compact, compact_details(&dir, old).unwrap());
+        let compact = compact_details(&dir, &Budget::new(), old.clone()).unwrap();
+        assert_eq!(compact, compact_details(&dir, &Budget::new(), old).unwrap());
         assert_eq!(
             compact
                 .iter()
@@ -759,9 +995,9 @@ mod tests {
         let name = format!("{}.counts.json", hash(bytes));
         fs::write(dir.join(format!("{name}.interrupted.pending")), b"partial").unwrap();
         assert!(!dir.join(&name).exists());
-        write_immutable(&dir, &name, bytes).unwrap();
+        write_immutable(&dir, &Budget::new(), &name, bytes).unwrap();
         let time = fs::metadata(dir.join(&name)).unwrap().modified().unwrap();
-        write_immutable(&dir, &name, bytes).unwrap();
+        write_immutable(&dir, &Budget::new(), &name, bytes).unwrap();
         assert_eq!(fs::read(dir.join(&name)).unwrap(), bytes);
         assert_eq!(
             fs::metadata(dir.join(&name)).unwrap().modified().unwrap(),
@@ -955,11 +1191,33 @@ mod tests {
 }
 fn main() {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.first().is_some_and(|s| s == "--merge-usgwd") {
+        if args.len() != 3 {
+            eprintln!("usage: well_index --merge-usgwd <state-indexes.json> <output-directory>");
+            std::process::exit(1);
+        }
+        match federation::run(Path::new(&args[1]), Path::new(&args[2])) {
+            Ok(v) => println!("{v}"),
+            Err(e) => {
+                eprintln!("index refused: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    let historical = args.first().is_some_and(|s| s == "--usgwd");
+    let args = if historical { &args[1..] } else { &args[..] };
     if args.len() != 2 {
-        eprintln!("usage: well_index <pinned-batches.json> <output-directory>");
+        eprintln!(
+            "usage: well_index [--usgwd] <pinned-batches.json | normalized-manifest.json> <output-directory>"
+        );
         std::process::exit(1);
     }
-    match run(Path::new(&args[0]), Path::new(&args[1])) {
+    match if historical {
+        run_input(Path::new(&args[0]), Path::new(&args[1]), true)
+    } else {
+        run(Path::new(&args[0]), Path::new(&args[1]))
+    } {
         Ok(v) => println!("{v}"),
         Err(e) => {
             eprintln!("index refused: {e}");

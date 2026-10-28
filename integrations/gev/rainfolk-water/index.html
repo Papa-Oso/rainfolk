@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="Explore historical public well-source records with original-source links and explicit coverage limits."
+    />
+    <link rel="icon" href="data:," />
+    <title>Well records · Rainfolk</title>
+  </head>
+  <body>
+    <header>
+      <a href="/" class="brand">Rainfolk</a><span>Well records</span>
+      <nav aria-label="Map controls">
+        <button id="home" type="button">United States</button
+        ><button id="toggle" type="button" aria-pressed="true">
+          Hide wells</button
+        ><button id="dismiss" type="button">Clear selection</button>
+      </nav>
+    </header>
+    <main
+      id="map"
+      aria-label="Interactive map of historical well-source locations"
+    ></main>
+    <section class="summary" aria-label="Inventory status">
+      <div>
+        <strong id="catalog">—</strong> mapped historical source records
+      </div>
+      <div><strong id="retained">-</strong> retained catalog records; <strong id="unmapped">-</strong> unmapped</div>
+      <div><span id="represented">—</span> represented in the loaded view</div>
+      <p id="status" role="status">Loading saved location records…</p>
+      <p id="selected-source" hidden aria-label="Selected well source">
+        <span id="source-record"></span>
+        <a id="original-source" hidden target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open USGWD source and citation (new tab)</a>
+        <span id="source-unavailable" hidden>Original source unavailable for this record.</span>
+      </p>
+      <details>
+        <summary>Legend, sources and limits</summary>
+        <p>
+          Hollow amber points are unverified source positions. Numbered circles group
+          mapped source records; select a circle to zoom, or a dot or flag for
+          source details. Counts at broad scales include whole intersecting
+          aggregate cells.
+        </p>
+        <p>
+          Historical USGWD research compilation; incomplete coverage. Catalog records are not necessarily distinct physical wells or currently active wells. Original NAD83 coordinates are retained with explicit approximate display conversion; source location accuracy remains unknown. Invalid measurements are flagged without guessed corrections. No water-level observations or water-safety assessment are included. Nebraska and South Carolina remain separate acquisition blockers.
+        </p>
+        <p>
+          The bundled Natural Earth basemap is low resolution: it provides broad
+          geographic context, not streets, property boundaries or site
+          navigation.
+        </p>
+        <p>
+          Data:
+          <a
+            href="https://www.hydroshare.org/resource/8b02895f02c14dd1a749bcc5584a5c55/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >USGWD (CC BY 4.0; original creators and citation at source)</a
+          >. Map:
+          <a
+            href="https://www.naturalearthdata.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Natural Earth</a
+          >
+          and Cesium. Layer and native information flags adapted from
+          <a
+            href="https://github.com/bilawalsidhu/gods-eye-view"
+            target="_blank"
+            rel="noopener noreferrer"
+            >God’s Eye View</a
+          >; no official partnership implied.
+        </p>
+        <p>
+          <a href="./notices/ATTRIBUTION.txt"
+            >Attribution and license notices</a
+          >
+        </p>
+      </details>
+    </section>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

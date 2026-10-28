@@ -39,6 +39,8 @@ jobs:
         run: cargo +1.99.1 fmt --manifest-path crates/us-groundwater/Cargo.toml -- --check
       - name: Offline transport tests
         run: python -B -m unittest discover -s scripts -p 'test_capture*.py'
+      - name: Historical browser-contract tests
+        run: node --test integrations/gev/historicalPack.test.mjs
       - name: Replay and tamper fixture
         run: python -B examples/offline.py
       - name: Replay synthetic SDR fixture

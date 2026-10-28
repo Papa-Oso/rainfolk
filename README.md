@@ -2,6 +2,8 @@
 
 The local [USGWD historical baseline importer](docs/USGWD.md) preserves release-scoped
 IDs, NAD83 coordinates and source quality flags, with bounded offline CSV replay.
+The [local map bridge](docs/USGWD_MAP.md) retains invalid-measurement warnings,
+prepares explicit display coordinates and reuses the existing count/detail layer.
 
 ### A well-th of information
 

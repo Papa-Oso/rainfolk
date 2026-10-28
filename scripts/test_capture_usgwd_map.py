@@ -1,0 +1,141 @@
+"""Invented records through normalization, existing index writers and browser admission."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import unittest
+import test_capture_usgwd as fixtures
+ROOT = fixtures.ROOT
+
+INDEX = ROOT/'crates/us-groundwater/target/debug'/('well_index.exe' if os.name == 'nt' else 'well_index')
+
+
+class UsgwdMapTests(unittest.TestCase):
+    setUp = fixtures.UsgwdTests.setUp
+    tearDown = fixtures.UsgwdTests.tearDown
+    source = fixtures.UsgwdTests.source
+    run_import = fixtures.UsgwdTests.run_import
+    segment = fixtures.UsgwdTests.segment
+
+    def index_run(self, manifest, out, okay=True):
+        result = subprocess.run([str(INDEX), '--usgwd', str(manifest), str(out)], capture_output=True)
+        if okay:
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            return json.loads(result.stdout)
+        self.assertNotEqual(result.returncode, 0)
+        return result
+
+    def packs(self, out):
+        index = json.loads((out/'index.json').read_bytes())
+        result = []
+        for ref in index['regions']:
+            raw = (out/ref['url']).read_bytes()
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), ref['sha256'])
+            result.append(json.loads(raw))
+        return index, result
+
+    def test_invalid_quantity_keeps_original_and_maps_without_fake_usgs_identity(self):
+        paths = self.source([dict(self.rows[0], **{'Length of Screen (Feet)': '-5'})])
+        self.run_import(paths, allowance=None)
+        out = self.root/'map'
+        self.index_run(self.root/'output/usgwd-manifest.json', out)
+        index, packs = self.packs(out)
+        self.assertEqual(index['indexedRecords'], 1)
+        self.assertEqual(index['catalogRecords'], 1)
+        self.assertIsNone(index['distinctPhysicalWells'])
+        r = packs[0]['records'][0]
+        self.assertTrue(r['id'].startswith('USGWD-'))
+        self.assertEqual(r['source'], 'USGWD')
+        self.assertEqual(r['readings'], [])
+        self.assertEqual(r['metadata']['quantityErrors'], [{'field': 'Length of Screen (Feet)', 'reason': 'negative', 'rawValue': '-5'}])
+        self.assertIsNone(r['metadata']['quantities']['Length of Screen (Feet)']['value'])
+        self.assertEqual(r['metadata']['sourceCoordinates']['crs'], 'EPSG:4269')
+        self.assertEqual(r['coordinateReference'], 'EPSG:4326')
+        self.assertEqual(r['metadata']['coordinateOperation']['operation'], 'EPSG:1188')
+
+    def test_global_conflicting_versions_do_not_leak_from_partitions_to_map(self):
+        rows = [dict(self.rows[0], **{'Well ID': f'MAP_{i}'}) for i in range(200)]
+        rows += [rows[0], dict(rows[1], **{'Length of Screen (Feet)': '-5'})]
+        paths = self.source(rows)
+        self.segment(paths); final = self.segment(paths)
+        self.assertEqual(final['accounting']['acceptedRecords'], 199)
+        out = self.root/'map'
+        self.index_run(self.root/'segmented/usgwd-segmented-manifest.json', out)
+        index, packs = self.packs(out)
+        ids = [r['id'] for p in packs for r in p['records']]
+        self.assertEqual(index['indexedRecords'], 199)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertFalse(any(i.endswith('-MAP_1') for i in ids))
+
+    def test_unmapped_records_stay_in_catalog_and_old_policy_refuses_activation(self):
+        paths = self.source()
+        self.run_import(paths, allowance=None)
+        out = self.root/'map'; manifest = self.root/'output/usgwd-manifest.json'
+        self.index_run(manifest, out)
+        index, _ = self.packs(out)
+        self.assertEqual((index['catalogRecords'], index['indexedRecords'], index['unmappedRecords']), (2, 1, 1))
+        before = (out/'index.json').read_bytes()
+        self.index_run(manifest, out)
+        self.assertEqual((out/'index.json').read_bytes(), before)
+        e = json.loads(manifest.read_bytes()); e['payload']['normalizationPolicy'] = 'previous'
+        compact = lambda v: json.dumps(v, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+        e['sha256'] = hashlib.sha256(compact(e['payload'])).hexdigest(); manifest.write_bytes(compact(e))
+        self.index_run(manifest, out, okay=False)
+        self.assertEqual((out/'index.json').read_bytes(), before)
+
+    def test_tampered_partition_preserves_last_good_index(self):
+        paths = self.source(); self.run_import(paths, allowance=None)
+        out = self.root/'map'; manifest = self.root/'output/usgwd-manifest.json'
+        self.index_run(manifest, out); before = (out/'index.json').read_bytes()
+        ref = json.loads(manifest.read_bytes())['payload']['partitions'][0]
+        p = manifest.parent/ref['path']; p.write_bytes(p.read_bytes() + b' ')
+        self.index_run(manifest, out, okay=False)
+        self.assertEqual((out/'index.json').read_bytes(), before)
+
+    def test_self_consistent_manifest_cannot_duplicate_one_partition_and_omit_another(self):
+        paths=self.source([dict(self.rows[0], **{'Well ID':f'PART_{i}'}) for i in range(400)])
+        self.run_import(paths, allowance=None)
+        out=self.root/'map';manifest=self.root/'output/usgwd-manifest.json'
+        self.index_run(manifest,out);before=(out/'index.json').read_bytes()
+        e=json.loads(manifest.read_bytes());e['payload']['partitions'][1]=e['payload']['partitions'][0]
+        compact=lambda v:json.dumps(v,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
+        e['sha256']=hashlib.sha256(compact(e['payload'])).hexdigest();manifest.write_bytes(compact(e))
+        self.index_run(manifest,out,okay=False)
+        self.assertEqual((out/'index.json').read_bytes(),before)
+
+    def make_state_index(self, state, native, target):
+        row = dict(self.rows[0], **{'Well ID': native, 'State': state})
+        paths = self.source([row]); source = json.loads(paths[1].read_bytes())
+        source['state'] = state; source['sourceUrl'] = source['sourceUrl'].replace('New_Hampshire', state.replace(' ', '_'))
+        paths[1].write_text(json.dumps(source))
+        self.run_import(paths, state+'-'+native, allowance=None)
+        out = target/'states'/state.replace(' ', '_')
+        self.index_run(self.root/(state+'-'+native)/'usgwd-manifest.json', out)
+        return dict(state=state, path=f'states/{state.replace(" ", "_")}/index.json', sha256=hashlib.sha256((out/'index.json').read_bytes()).hexdigest())
+
+    def test_state_federation_combines_overlapping_cells_without_location_dedup(self):
+        out = self.root/'national'
+        states = [self.make_state_index('New Hampshire', 'NH_SOURCE_A', out), self.make_state_index('Rhode Island', 'RI_SOURCE_A', out)]
+        descriptor = self.root/'states.json'; descriptor.write_text(json.dumps(dict(states=states, blockedStates=['Nebraska', 'South Carolina'])))
+        command = [str(INDEX), '--merge-usgwd', str(descriptor), str(out)]
+        result = subprocess.run(command, capture_output=True); self.assertEqual(result.returncode, 0, result.stderr.decode())
+        index = json.loads((out/'index.json').read_bytes())
+        self.assertEqual(index['indexedRecords'], 2); self.assertEqual(index['catalogRecords'], 2)
+        self.assertEqual(len(index['children']), 2); self.assertEqual(index['regions'], [])
+        overview = json.loads((out/index['aggregates']['overview']['url']).read_bytes())
+        for level in overview['levels']:
+            self.assertEqual(sum(c['count'] for c in level['cells']), 2)
+            self.assertEqual(len(level['cells']), 1)
+        before = (out/'index.json').read_bytes()
+        result = subprocess.run(command, capture_output=True); self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual((out/'index.json').read_bytes(), before)
+        # Same release ID in different files is a collision, regardless of location.
+        states[1] = self.make_state_index('Rhode Island', 'NH_SOURCE_A', out)
+        descriptor.write_text(json.dumps(dict(states=states)))
+        result = subprocess.run(command, capture_output=True); self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((out/'index.json').read_bytes(), before)
+
+
+if __name__ == '__main__':
+    unittest.main()

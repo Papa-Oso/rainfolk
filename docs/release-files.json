@@ -249,8 +249,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 9912,
-      "sha256": "1d0ff6bf71012605e41ed003add8f5482847e026b4c4439f610450f0a6580d48"
+      "bytes": 10074,
+      "sha256": "95014da58d36c4885e30d207bd9a613f5db8bf2df002a160a1c9db904ca8dd80"
     },
     {
       "path": "SECURITY.md",
@@ -269,8 +269,8 @@
     },
     {
       "path": "crates/us-groundwater/src/bin/well_index.rs",
-      "bytes": 43023,
-      "sha256": "07c70a90c6286f2bcbf6f9769165e9db82ad797ba1dd3c30a85a5cdb5cd13c8b"
+      "bytes": 53728,
+      "sha256": "0c4b0f3d48dea96d981c5a3c0e5814af182b90278fc2297d410bb98b67233993"
     },
     {
       "path": "crates/us-groundwater/src/bin/well_jobs.rs",
@@ -289,8 +289,8 @@
     },
     {
       "path": "crates/us-groundwater/src/lib.rs",
-      "bytes": 33997,
-      "sha256": "cae17d7cd686e89057630ebe6b04cda9eaa58dbb11e8138b1c468428f1652159"
+      "bytes": 34016,
+      "sha256": "b767ccca21b69df15e3531225f3d9d8398ca30a40943126c2100f3d2efcb51ef"
     },
     {
       "path": "crates/us-groundwater/src/main.rs",
@@ -328,9 +328,19 @@
       "sha256": "1c67812a12618105fc1eb65681a7d59c18fb62930f9ca79ad81d98f85c245c7f"
     },
     {
+      "path": "crates/us-groundwater/src/usgwd_map.rs",
+      "bytes": 16692,
+      "sha256": "00ce0fac7e4cda357a2eb65ba59678295349dd17523c704ef26e5c9e893d86a2"
+    },
+    {
       "path": "crates/us-groundwater/src/usgwd_segments.rs",
       "bytes": 16195,
       "sha256": "3df38e0920b2ba9521411c0332eaae2f30f485da89f41bfc35d1d6308271d365"
+    },
+    {
+      "path": "crates/us-groundwater/src/well_index_merge.rs",
+      "bytes": 12652,
+      "sha256": "b97a817f84fd09246ccecb9b93220dff19c528cca462fff74330b4a896c06a05"
     },
     {
       "path": "crates/us-groundwater/tests/texas_sdr.rs",
@@ -371,6 +381,11 @@
       "path": "docs/USGWD.md",
       "bytes": 12680,
       "sha256": "2a311e8cd6c8629e6dbf6ac6d53abe5b00b3044bcfb1ebe47bceb6046c903eae"
+    },
+    {
+      "path": "docs/USGWD_MAP.md",
+      "bytes": 5573,
+      "sha256": "9d761fd8b1c3dbc5dc1286f09272438c722bdb966f61b073eb95e7ffd138b8ad"
     },
     {
       "path": "docs/dependencies.json",
@@ -513,6 +528,76 @@
       "sha256": "b1604357f16b99ffd02dfa09faa4d9ca36fabbd2aeab231af46827711b477198"
     },
     {
+      "path": "integrations/gev/README.md",
+      "bytes": 2635,
+      "sha256": "611598a2ed718ea33464ee13b288e502cbc1b60ed69652751ee73ab73015d344"
+    },
+    {
+      "path": "integrations/gev/base-groundwater-consumer.patch",
+      "bytes": 233912,
+      "sha256": "75adc94c85930a44f7bf74f2f62fa1f73628cb8af9e0967625ac6c461a021e31"
+    },
+    {
+      "path": "integrations/gev/base-shared-host-cooldown.patch",
+      "bytes": 12171,
+      "sha256": "f0f7d6fbf6800121de9f31815b9e06eb2ea44f523a0aaa23f91d9bb6f2475d62"
+    },
+    {
+      "path": "integrations/gev/build-map.mjs",
+      "bytes": 2865,
+      "sha256": "55d80a4ab11d1d8d82118bf657092c7792cf287569d7ed688acdd9c2a838cef8"
+    },
+    {
+      "path": "integrations/gev/consumer-pins.json",
+      "bytes": 1752,
+      "sha256": "d14b9b4438c4fe33127ce60a04ac16b0a0a0de2fe0b2977cf33a4a71ea066529"
+    },
+    {
+      "path": "integrations/gev/historicalPack.mjs",
+      "bytes": 7749,
+      "sha256": "99cb1fb4f3295a48b10c5ca2d83ecfa700cfec7b071ff73d2077dc456a462c49"
+    },
+    {
+      "path": "integrations/gev/historicalPack.test.mjs",
+      "bytes": 4591,
+      "sha256": "5f7a1eb4077d677a6b51929b42ccbb4658f246e7ed09cf5ef410f98520c3d92a"
+    },
+    {
+      "path": "integrations/gev/prepare-consumer.py",
+      "bytes": 3470,
+      "sha256": "051bb376c83f148fbda4792b0a6aba7fd9ebbad93219936f4af5af3e471e99e3"
+    },
+    {
+      "path": "integrations/gev/rainfolk-water/index.html",
+      "bytes": 3769,
+      "sha256": "38ddc2f117ce9a79d1f4137a0bc40dd1828a4b54164855cb63e9b9514ae64558"
+    },
+    {
+      "path": "integrations/gev/rainfolk-water/main.js",
+      "bytes": 4777,
+      "sha256": "c2bf9c6fbac7e98dbeaa0dce9fbb8dfc3121642cd4b3f9061548a400a4146274"
+    },
+    {
+      "path": "integrations/gev/rainfolk-water/map.css",
+      "bytes": 1845,
+      "sha256": "b7e015099ed85547803d63046c8a5e03b36a61570fa5e0d6f5db525c0c4b19a6"
+    },
+    {
+      "path": "integrations/gev/rainfolk-water/pageLifecycle.mjs",
+      "bytes": 612,
+      "sha256": "c04133a03a622c675d52f08903e95ce3e608f7a85fdce54f8b814b706bcce399"
+    },
+    {
+      "path": "integrations/gev/rainfolk-water/sourceAction.mjs",
+      "bytes": 1448,
+      "sha256": "d8d75bffa9c4bad7faa59ccf227d4bc9578d144f8ab4959951eed56ac71c28d3"
+    },
+    {
+      "path": "integrations/gev/usgwd-consumer.patch",
+      "bytes": 10829,
+      "sha256": "8546c2e9e100a0c002e352bbf48017011a0804a6be8bce9223d99d18700f3cae"
+    },
+    {
       "path": "scripts/capture-texas-sdr-bulk.py",
       "bytes": 8998,
       "sha256": "522835292caddda70e26aa5ac743ebc1735c5094e6be8fe6cb3f788f0726f19c"
@@ -556,6 +641,11 @@
       "path": "scripts/test_capture_usgwd.py",
       "bytes": 21316,
       "sha256": "950a7aa2841f09abd0bb28968cd4cc1a0b82f028daa9933002c5810c720dd60f"
+    },
+    {
+      "path": "scripts/test_capture_usgwd_map.py",
+      "bytes": 8194,
+      "sha256": "b94768b9c89cb0122d93be5916bfe18b793db6b062d07536f4e4f448cbc29d8e"
     },
     {
       "path": "scripts/usgs-key.ps1",
