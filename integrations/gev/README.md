@@ -14,6 +14,9 @@ acquisition. `usgwd-consumer.patch` adds source-aware admission, finite child-in
 loading and source-neutral labels. `historicalPack.mjs` is the closed historical
 validator and description adapter. `dataBase.mjs` resolves same-origin paths or
 explicitly allowlisted HTTPS data directories without credentials or redirects.
+The separately pinned `wells-ui.patch` refines the full-app well selection,
+group drilldown, marker density and native panel presentation without changing
+the source identities or the producer data.
 No dependency version is changed.
 
 From Rainfolk, with the existing GEV base objects and installed dependencies:

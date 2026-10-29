@@ -1,0 +1,322 @@
+diff --git a/src/data/trackedReadout.js b/src/data/trackedReadout.js
+index 2710ba0..fee2904 100644
+--- a/src/data/trackedReadout.js
++++ b/src/data/trackedReadout.js
+@@ -170,7 +170,7 @@ export function createTrackedOverlayEntry(entity) {
+       : TRACKED_BILLBOARD_SCALE,
+     minAnchorGapPx: 16,
+     anchorGapPaddingPx: 10,
+-    verticalOnly: true,
++    verticalOnly: model.verticalOnly !== false,
+     viewportMargin: 6,
+     edgeFade: 'keyhole',
+     horizonCull: true,
+diff --git a/src/layers/usGroundwater/countRenderer.js b/src/layers/usGroundwater/countRenderer.js
+index c4d58da..12f2f31 100644
+--- a/src/layers/usGroundwater/countRenderer.js
++++ b/src/layers/usGroundwater/countRenderer.js
+@@ -4,7 +4,7 @@ import { createInfrastructureOverlayEntry } from '../../data/infrastructureOverl
+ import { validateCountView } from './countGrids.js';
+ 
+ export const circleDiameter = (count) =>
+-  count < 10 ? 22 : count < 100 ? 28 : count < 1000 ? 36 : 44;
++  count < 100 ? 18 : count < 1000 ? 22 : 26;
+ export const circleLabel = (count) =>
+   count < 1000
+     ? String(count)
+@@ -13,6 +13,22 @@ export const circleLabel = (count) =>
+         maximumFractionDigits: 1,
+       }).format(count);
+ const SOURCE = 'us-groundwater-counts';
++export function padGroupBounds(bounds) {
++  const b = [...bounds];
++  const minSpan = 0.01;
++  const longitudeSpan = b[2] - b[0] === 360 ? 360 : (b[2] - b[0] + 360) % 360;
++  if (longitudeSpan < minSpan) {
++    const mid = ((b[0] + longitudeSpan / 2 + 540) % 360) - 180;
++    b[0] = ((mid - minSpan / 2 + 540) % 360) - 180;
++    b[2] = ((mid + minSpan / 2 + 540) % 360) - 180;
++  }
++  if (b[3] - b[1] < minSpan) {
++    const mid = (b[1] + b[3]) / 2;
++    b[1] = Math.max(-90, Math.min(90 - minSpan, mid - minSpan / 2));
++    b[3] = b[1] + minSpan;
++  }
++  return b;
++}
+ export function wellMarkerImage(hasReadings, uncertain = false) {
+   const fill = uncertain ? 'none' : hasReadings ? '#56b4e9' : '#c6d0d4';
+   return (
+@@ -29,7 +45,7 @@ export function countMarkerImage(count) {
+     r = size / 2;
+   // Rasterize the SVG into Cesium's atlas at 3x; billboard dimensions remain
+   // CSS-sized. This improves marker typography without changing scene quality.
+-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size * 3}" height="${size * 3}" viewBox="0 0 ${size} ${size}"><circle cx="${r}" cy="${r}" r="${r - 2}" fill="#17658f" stroke="#071b25" stroke-width="2"/><text x="${r}" y="${r}" dy=".35em" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="12" fill="white">${circleLabel(count)}</text></svg>`;
++  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size * 3}" height="${size * 3}" viewBox="0 0 ${size} ${size}"><circle cx="${r}" cy="${r}" r="${r - 2}" fill="#17658f" stroke="#071b25" stroke-width="2"/><text x="${r}" y="${r}" dy=".35em" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="${count < 100 ? 10 : 9}" fill="white">${circleLabel(count)}</text></svg>`;
+   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+ }
+ /** Sum record weights, never the number of Cesium aggregate entities. */
+@@ -136,15 +152,9 @@ export function createCountRenderer(
+   }
+   function zoomGroup(g) {
+     onSelectGroup(g.count);
+-    const b = [...g.bounds];
+-    if (b[0] === b[2]) {
+-      b[0] = Math.max(-180, b[0] - 0.001);
+-      b[2] = Math.min(180, b[2] + 0.001);
+-    }
+-    if (b[1] === b[3]) {
+-      b[1] = Math.max(-90, b[1] - 0.001);
+-      b[3] = Math.min(90, b[3] + 0.001);
+-    }
++    const b = padGroupBounds(g.bounds);
++    // Keep very tight or coincident groups in a useful local context rather
++    // than flying down to ground level. Preserve wide/dateline-spanning bounds.
+     viewer.camera.flyTo({
+       destination: Cesium.Rectangle.fromDegrees(...b),
+       duration: 0.7,
+@@ -255,7 +265,7 @@ export function createCountRenderer(
+               activate: () => onSelectRecord(entity),
+             };
+           }),
+-        { cohortLimit: 24, collisionCapacity: 24, moving: false },
++        { cohortLimit: 6, collisionCapacity: 6, moving: false },
+       );
+       overlays.setOverlaySourceVisible?.(SOURCE, true);
+     }
+@@ -290,7 +300,7 @@ export function createCountRenderer(
+     // one maximum output radius plus a 10px gap, while exact dots keep their
+     // finer native spacing. This changes grouping, never represented totals.
+     clustering.pixelRange = view.cells.length
+-      ? Math.max(32, Math.min(44, Math.round(1000 * Math.sqrt(density))))
++      ? Math.max(24, Math.min(30, Math.round(1000 * Math.sqrt(density))))
+       : Math.max(4, Math.min(8, Math.round(200 * Math.sqrt(density))));
+     for (const record of view.detailPack?.records ?? []) {
+       const id = `us-groundwater:${record.id}`;
+diff --git a/src/layers/usGroundwater/countRenderer.test.mjs b/src/layers/usGroundwater/countRenderer.test.mjs
+index 68c232b..9591783 100644
+--- a/src/layers/usGroundwater/countRenderer.test.mjs
++++ b/src/layers/usGroundwater/countRenderer.test.mjs
+@@ -7,6 +7,7 @@ import {
+   circleDiameter,
+   aggregateMembers,
+   countMarkerImage,
++  padGroupBounds,
+ } from './countRenderer.js';
+ test('count circles and numeric labels remain bounded, survive repeat draw and dispose', () => {
+   const grounds = new Cesium.PrimitiveCollection();
+@@ -80,6 +81,13 @@ test('native screen grouping sums record weights, handles dateline bounds and pr
+   assert.throws(() => aggregateMembers([{ id: 'missing' }], cells));
+ });
+ 
++test('a tiny aggregate is padded for a useful drilldown without changing its count', () => {
++  const bounds = padGroupBounds([10, 20, 10.0001, 20.0001]);
++  assert.ok(bounds[2] - bounds[0] >= 0.00999);
++  assert.ok(bounds[3] - bounds[1] >= 0.00999);
++  assert.deepEqual(padGroupBounds([178, 4, -178, 6]), [178, 4, -178, 6]);
++});
++
+ test('loaded singletons stay plain dots with native actionable flags; crowded records drill down', () => {
+   const frame = new Cesium.Event(),
+     changed = new Cesium.Event(),
+@@ -145,7 +153,7 @@ test('loaded singletons stay plain dots with native actionable flags; crowded re
+   );
+   assert.equal(
+     circleDiameter(2),
+-    22,
++    18,
+     'genuinely overlapping small groups stay subordinate to overview clusters',
+   );
+   const cluster = { point: {}, label: {}, billboard: {} };
+diff --git a/src/layers/usGroundwater/index.js b/src/layers/usGroundwater/index.js
+index 2dbd405..fca4816 100644
+--- a/src/layers/usGroundwater/index.js
++++ b/src/layers/usGroundwater/index.js
+@@ -147,11 +147,6 @@ export function createUsGroundwaterLayer({
+         destroyed
+       )
+         return;
+-      if (hasContextHost())
+-        clearSelectedEntityContextForLayer('us-groundwater');
+-      if (recordsByEntity.has(viewer.selectedEntity?.id))
+-        viewer.selectedEntity = undefined;
+-      onSelect(null);
+       pack = next;
+       error = null;
+       if (!attached) await attach();
+@@ -164,6 +159,7 @@ export function createUsGroundwaterLayer({
+         !destroyed
+       ) {
+         error = failure?.message ?? msg('Source unavailable');
++        clearWellSelection();
+         status();
+       }
+     } finally {
+@@ -174,6 +170,12 @@ export function createUsGroundwaterLayer({
+     }
+   }
+   const recordsByEntity = new Map();
++  function clearWellSelection() {
++    if (!recordsByEntity.has(viewer?.selectedEntity?.id)) return;
++    viewer.selectedEntity = undefined;
++    if (hasContextHost()) clearSelectedEntityContextForLayer('us-groundwater');
++    onSelect(null);
++  }
+   function selectWell(entity) {
+     const record = recordsByEntity.get(entity?.id);
+     if (!enabled || !attached || !record) return false;
+@@ -233,6 +235,8 @@ export function createUsGroundwaterLayer({
+   });
+   const status = () => onStatus(stats());
+   function release() {
++    if (recordsByEntity.has(viewer?.selectedEntity?.id))
++      viewer.selectedEntity = undefined;
+     countRenderer?.clear();
+     selectedGroupCount = null;
+     attached = false;
+@@ -262,9 +266,15 @@ export function createUsGroundwaterLayer({
+   }
+   function draw() {
+     if (!enabled || destroyed || !pack || !dataSource || !attached) return;
++    // Capture the current owner at draw time: an intervening user selection
++    // must never be replaced by the result of an older viewport request.
++    const selectedId = recordsByEntity.has(viewer.selectedEntity?.id)
++      ? viewer.selectedEntity.id
++      : null;
+     const counted = pack.kind === 'gev-well-count-view';
+     const detail = counted ? pack.detailPack : pack;
+     if (counted && !detail?.records.length) {
++      clearWellSelection();
+       recordsByEntity.clear();
+       incumbents.clear();
+       if (hasContextHost()) removeEntityContextsForLayer('us-groundwater');
+@@ -385,6 +395,7 @@ export function createUsGroundwaterLayer({
+         accent: '#00ffff',
+         cardStyle: 'tactical',
+         selected: true,
++        verticalOnly: false,
+         anchorRadiusPx: 5,
+         anchorRadiusScale: null,
+       };
+@@ -402,6 +413,15 @@ export function createUsGroundwaterLayer({
+         });
+       }
+     }
++    if (selectedId) {
++      const replacement = dataSource.entities.getById(selectedId);
++      if (replacement) selectWell(replacement);
++      else {
++        viewer.selectedEntity = undefined;
++        if (hasContextHost()) clearSelectedEntityContextForLayer('us-groundwater');
++        onSelect(null);
++      }
++    }
+     if (counted || detail.coverage.indexed) {
+       countRenderer.draw(
+         counted
+diff --git a/src/layers/usGroundwater/index.test.mjs b/src/layers/usGroundwater/index.test.mjs
+index 82a8b7f..fc6f004 100644
+--- a/src/layers/usGroundwater/index.test.mjs
++++ b/src/layers/usGroundwater/index.test.mjs
+@@ -12,6 +12,39 @@ const fixture = JSON.parse(
+   ),
+ );
+ 
++test('viewport refresh retains the current well by ID and clears it when absent', async () => {
++  const owned = ownedViewer(() => false);
++  const selections = [];
++  let next = fixture;
++  const layer = createUsGroundwaterLayer({
++    source: { viewport: true, async getSnapshot() { return next; } },
++    validatePack: (value) => value,
++    onSelect: (value) => selections.push(value),
++  });
++  layer.init(owned.viewer);
++  assert.equal(await layer.enable(), true);
++  const data = owned.collection.get(0);
++  const entity = data.entities.values[0];
++  owned.viewer.selectedEntity = entity;
++  owned.viewer.camera.moveEnd.raiseEvent();
++  await new Promise((resolve) => setImmediate(resolve));
++  assert.equal(owned.viewer.selectedEntity.id, entity.id);
++  assert.notEqual(owned.viewer.selectedEntity, entity);
++  assert.equal(selections.at(-1).id, entity.id.slice('us-groundwater:'.length));
++  const other = { id: 'other-layer:selection' };
++  owned.viewer.selectedEntity = other;
++  owned.viewer.camera.moveEnd.raiseEvent();
++  await new Promise((resolve) => setImmediate(resolve));
++  assert.equal(owned.viewer.selectedEntity, other, 'never steal a newer foreign selection');
++  owned.viewer.selectedEntity = data.entities.getById(entity.id);
++  next = { ...fixture, records: [] };
++  owned.viewer.camera.moveEnd.raiseEvent();
++  await new Promise((resolve) => setImmediate(resolve));
++  assert.equal(owned.viewer.selectedEntity, undefined);
++  assert.equal(selections.at(-1), null);
++  layer.destroy();
++});
++
+ function ownedViewer(rejectAdd) {
+   const collection = new Cesium.DataSourceCollection();
+   const attempts = [];
+diff --git a/src/ui/layerPanel.js b/src/ui/layerPanel.js
+index 55d8028..f9ff711 100644
+--- a/src/ui/layerPanel.js
++++ b/src/ui/layerPanel.js
+@@ -368,7 +368,7 @@ export class LayerPanel {
+ 
+       const bottomRow = document.createElement('div');
+       bottomRow.className = 'data-toggle-meta';
+-      setRowText(bottomRow, this._buildMetaText(layer));
++      this._syncMeta(bottomRow, layer);
+ 
+       row.appendChild(topRow);
+       row.appendChild(bottomRow);
+@@ -486,9 +486,9 @@ export class LayerPanel {
+         count: formatNumber(stats.catalogCount),
+       });
+     const phrase =
+-      getLocale() !== 'en' &&
++      row.dataset.layerId === 'us-groundwater' || (getLocale() !== 'en' &&
+       typeof stats.countLabel === 'string' &&
+-      /\d/.test(stats.countLabel);
++      /\d/.test(stats.countLabel));
+     row.classList.toggle('data-toggle-row--count-line', phrase);
+     count.classList.toggle('data-count-empty', text === '—');
+   }
+@@ -623,7 +623,7 @@ export class LayerPanel {
+ 
+       const meta = row.querySelector('.data-toggle-meta');
+       if (meta) {
+-        setRowText(meta, this._buildMetaText(layer));
++        this._syncMeta(meta, layer);
+       }
+ 
+       this._syncRowControls(
+@@ -635,6 +635,27 @@ export class LayerPanel {
+     this._refreshWeatherPanel();
+   }
+ 
++  _syncMeta(node, layer) {
++    const full = this._buildMetaText(layer);
++    const stats = layer.stats || {};
++    if (layer.id === 'us-groundwater' && layer.enabled && stats.mode === 'snapshot' && !stats.loading && !stats.sourceUnavailable && !layer.lifecycleUncertain && !['enabling', 'disabling'].includes(layer.lifecycleState) && !stats.error && !stats.lastError && !stats.managerRefreshError) {
++      const mode = stats.displayMode === 'groups' ? t('Grouped locations') : stats.displayMode === 'mixed' ? t('Grouped locations') + ' + ' + t('Individual records') : t('Individual records');
++      const selected = Number.isSafeInteger(stats.selectedGroupCount)
++        ? ' · ' + t('Selected group: {count}', { count: formatNumber(stats.selectedGroupCount) }) : '';
++      setRowText(node, `${sourceLabel(stats.source || layer.source)} · ${t('Partial coverage')} · ${mode}${selected}`);
++      node.title = full;
++      node.tabIndex = 0;
++      node.setAttribute('role', 'note');
++      node.setAttribute('aria-label', full);
++    } else {
++      setRowText(node, full);
++      node.title = '';
++      node.tabIndex = -1;
++      node.removeAttribute?.('aria-label');
++      node.removeAttribute?.('role');
++    }
++  }
++
+   _buildMetaText(layer) {
+     const stats = layer.stats || {};
+     const feedState = layerFeedState(stats);
