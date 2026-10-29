@@ -26,7 +26,7 @@
     {
       "path": "src/layers/usGroundwater/spatialSource.js",
       "beforeSha256": "32fca0ec8687bee3814d2822e493d8eb9d32b8d8feb025a081896f0b05914a48",
-      "afterSha256": "6e4cce41811d1698f63dd5275e889f6ec654ce1a6e68f359a6ba30c586311e36"
+      "afterSha256": "0e0e9770a16e4c69e44fb66bcfb16743a8687ec92b471e68b3f3e6b0ec6b1255"
     },
     {
       "path": "src/layers/usGroundwater/index.js",
@@ -41,7 +41,7 @@
     {
       "path": "src/layers/usGroundwater/spatialSource.test.mjs",
       "beforeSha256": "c04abe7ab17a73706cded72dbe1d9c7c7f32c941899bcc87677df74bbf6f0157",
-      "afterSha256": "0e5cb006eed631255a0d466a0c055f14d59ff19c319d3f6fa70d453b4724cf43"
+      "afterSha256": "12a87508a67849c0db03b7887d61a0b3c5e04f316c7b29a1f9bd59270e642358"
     }
   ]
 }

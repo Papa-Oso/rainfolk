@@ -12,7 +12,9 @@ The base consumer patch omits four fixture hunks: reuse the same four files
 already committed under Rainfolk `fixtures/us-groundwater/v1`, without new data
 acquisition. `usgwd-consumer.patch` adds source-aware admission, finite child-index
 loading and source-neutral labels. `historicalPack.mjs` is the closed historical
-validator and description adapter. No dependency version is changed.
+validator and description adapter. `dataBase.mjs` resolves same-origin paths or
+explicitly allowlisted HTTPS data directories without credentials or redirects.
+No dependency version is changed.
 
 From Rainfolk, with the existing GEV base objects and installed dependencies:
 
@@ -20,6 +22,7 @@ From Rainfolk, with the existing GEV base objects and installed dependencies:
 python -B integrations/gev/prepare-consumer.py EXISTING_GEV_CHECKOUT .temp-gev/consumer-proof
 node integrations/gev/build-map.mjs .temp-gev/consumer-proof .temp-gev/consumer-proof/build EXISTING_DEPENDENCY_CHECKOUT
 node --test integrations/gev/historicalPack.test.mjs
+node --test integrations/gev/dataBase.test.mjs
 ```
 
 The preparation command reads local Git objects at the pinned base and writes
@@ -30,8 +33,10 @@ the source checkout, downloads, installs, resets, deploys or creates credentials
 The build uses ordinary read-only paths to already installed dependencies; no
 directory junction is required. Output must be new, with retained license notices.
 
-Serve the built directory at `/map/` and a separately validated local merged
-index at `/well-index-usgwd/`. This shell deliberately identifies historical
+The optional shell can use a separately validated same-origin merged index at
+`/well-index-usgwd/`. The full GEV integration can instead configure an explicit
+HTTPS data base and `allowedDataOrigins`; see [data-feed preparation](../../docs/GEV_DATA_HOSTING.md).
+That plan does not deploy a website or enable an R2 bucket. This shell identifies historical
 catalog records, mapped records, unmapped records and unknown physical identity.
 It links to the publisher dataset/citation rather than inventing well-report URLs.
 The existing USGS index remains a separate source generation; no proximity merge

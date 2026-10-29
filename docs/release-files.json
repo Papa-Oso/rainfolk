@@ -353,6 +353,11 @@
       "sha256": "e842d88a6cc26ff0a6d118b0f2717abd237ae867de8046e704b4641308c8d240"
     },
     {
+      "path": "docs/GEV_DATA_HOSTING.md",
+      "bytes": 7583,
+      "sha256": "cfccb97bf4f9d0c5e12e9b985bfe7ab11e4462298cc2a901f7eeee34b95f82c6"
+    },
+    {
       "path": "docs/GEV_INTEGRATION.md",
       "bytes": 2388,
       "sha256": "683dfe7740c101254ef7f1041b715b15440611e88e5b7f917466dd6214dea943"
@@ -528,9 +533,14 @@
       "sha256": "b1604357f16b99ffd02dfa09faa4d9ca36fabbd2aeab231af46827711b477198"
     },
     {
+      "path": "integrations/gev/DATA_ATTRIBUTION.txt",
+      "bytes": 1375,
+      "sha256": "9667d08ed8b7fc1902d8a388a19d71431300f676bb20e086ab2c22883a1e4cec"
+    },
+    {
       "path": "integrations/gev/README.md",
-      "bytes": 2635,
-      "sha256": "611598a2ed718ea33464ee13b288e502cbc1b60ed69652751ee73ab73015d344"
+      "bytes": 3008,
+      "sha256": "45e7cf12b343fce90291304225f331ba4f9fa6345bad13d1523d1a6824087c81"
     },
     {
       "path": "integrations/gev/base-groundwater-consumer.patch",
@@ -550,7 +560,17 @@
     {
       "path": "integrations/gev/consumer-pins.json",
       "bytes": 2008,
-      "sha256": "d215d45ae4ef87519ba18b3c33f6b684d5ec34baec629faf0f2ca9c9206c0fb1"
+      "sha256": "01cc306003ec87fe888a9e4afb67ab1fec213e4529f0b393007e3dccd7614525"
+    },
+    {
+      "path": "integrations/gev/dataBase.mjs",
+      "bytes": 2010,
+      "sha256": "526731e7687c71a2a5a0748cb8b797f219546540d258cf76502534f21f60dc5e"
+    },
+    {
+      "path": "integrations/gev/dataBase.test.mjs",
+      "bytes": 2873,
+      "sha256": "5b3be7918daceb7593ca0c1965f525583b15f56e619480b17eaf0c033bae14d3"
     },
     {
       "path": "integrations/gev/historicalPack.mjs",
@@ -564,8 +584,8 @@
     },
     {
       "path": "integrations/gev/prepare-consumer.py",
-      "bytes": 3470,
-      "sha256": "051bb376c83f148fbda4792b0a6aba7fd9ebbad93219936f4af5af3e471e99e3"
+      "bytes": 3555,
+      "sha256": "e541ad1319816a8d19c82d805a82ce8fc8ec130898a024d27e46477278647fab"
     },
     {
       "path": "integrations/gev/rainfolk-water/index.html",
@@ -594,8 +614,8 @@
     },
     {
       "path": "integrations/gev/usgwd-consumer.patch",
-      "bytes": 14814,
-      "sha256": "0ec544a600082706924093d27ffc5f1c5806919f8236d07329adee67ff097ed9"
+      "bytes": 19002,
+      "sha256": "1683f20a1ecc8d501f390a0671fbf44bc731c14219711fe6d651fc394e5574fc"
     },
     {
       "path": "scripts/capture-texas-sdr-bulk.py",

@@ -24,6 +24,7 @@ cargo test --offline --locked --manifest-path crates/us-groundwater/Cargo.toml
 cargo fmt --manifest-path crates/us-groundwater/Cargo.toml -- --check
 python -B -m unittest discover -s scripts -p 'test_capture*.py'
 node --test integrations/gev/historicalPack.test.mjs
+node --test integrations/gev/dataBase.test.mjs
 python -B examples/offline.py
 python -B examples/texas_sdr_offline.py
 ```

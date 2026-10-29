@@ -20,16 +20,34 @@ diff --git a/src/layers/usGroundwater/pack.js b/src/layers/usGroundwater/pack.js
 diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwater/spatialSource.js
 --- a/src/layers/usGroundwater/spatialSource.js
 +++ b/src/layers/usGroundwater/spatialSource.js
-@@ -13,6 +13,8 @@
+@@ -1,3 +1,4 @@
++import { createWellDataUrlResolver } from './dataBase.mjs';
+ import { readResponseBytesCapped } from '../../sources/httpBody.js';
+ import { validateWellPack, WELL_LIMITS } from './pack.js';
+ import { refineCountView } from './mixedDetail.js';
+@@ -9,16 +10,15 @@
+   countView,
+   validateCountView,
+ } from './countGrids.js';
+-/** One replaceable local index; bounded records and bytes per viewport; complete count grids otherwise. */
++/** One replaceable data index; bounded records and bytes per viewport; complete count grids otherwise. */
  export function createSpatialWellSource({
    fetchImpl = globalThis.fetch,
    base = '/well-index-v1/',
++  allowedDataOrigins = [],
 +  label = 'USGS',
 +  onCatalog = () => {},
  } = {}) {
-   if (!/^\/[\w-]+\/$/.test(base))
-     throw new TypeError('Local index path required');
-@@ -28,7 +30,7 @@
+-  if (!/^\/[\w-]+\/$/.test(base))
+-    throw new TypeError('Local index path required');
+-  const origin = new URL(globalThis.location?.origin ?? 'https://gev.invalid');
+-  if (!['http:', 'https:'].includes(origin.protocol))
+-    throw new TypeError('HTTP origin required');
++  const dataUrl = createWellDataUrlResolver(base, allowedDataOrigins);
+   let generation = 0;
+   let active;
+   let cachedCounts;
+@@ -28,7 +28,7 @@
    let cacheBytes = 0;
    const cacheLimit = 16 * 1024 * 1024;
    return {
@@ -38,12 +56,21 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
      viewport: true,
      async getSnapshot({
        signal,
-@@ -119,7 +121,37 @@
+@@ -61,7 +61,7 @@
+             throw new TypeError('Viewport byte budget');
+           return JSON.parse(new TextDecoder().decode(cached));
+         }
+-        const response = await fetchImpl(new URL(path, origin).href, {
++        const response = await fetchImpl(dataUrl(path), {
+           signal: combined,
+           credentials: 'omit',
+           redirect: 'error',
+@@ -119,7 +119,37 @@
            bounds[1] >= bounds[3])
        )
          throw new TypeError('Invalid viewport');
 -      const index = await read(`${base}index.json`);
-+      let index = await read(`${base}index.json`);
++      let index = await read('index.json');
 +      const federated = Array.isArray(index.children);
 +      const publishCatalog = (value) => {
 +        combined.throwIfAborted();
@@ -66,7 +93,7 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
 +        if (bounds && longitudeSpan <= 2 && bounds[3] - bounds[1] <= 2 && children.length <= 8 && children.reduce((n,c) => n+c.bytes,0) <= 16 * 1024 * 1024) {
 +          const regions = []; let population = 0;
 +          for (const c of children) {
-+            const child = await read(base + c.url, c.sha256, c.bytes, c.bytes);
++            const child = await read(c.url, c.sha256, c.bytes, c.bytes);
 +            if (child.kind !== 'gev-well-spatial-index' || child.schemaVersion !== 1 || child.coverageComplete !== false || child.sourceKind !== 'USGWD' || child.sourceState !== c.state || child.indexedRecords !== c.count || !Array.isArray(child.regions) || child.regions.length > 40000 || child.regions.reduce((n,t) => n+t.count,0) !== c.count) throw new TypeError('Invalid federated child accounting');
 +            for (const t of child.regions) { if (!/^[a-f0-9]{64}\.json$/.test(t.url)) throw new TypeError('Invalid federated tile path'); regions.push({...t, url: c.directory + t.url}); }
 +            population += c.count;
@@ -77,7 +104,7 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
        if (
          index.schemaVersion !== 1 ||
          index.kind !== 'gev-well-spatial-index' ||
-@@ -129,8 +161,8 @@
+@@ -129,8 +159,8 @@
          throw new TypeError('Invalid spatial index');
        for (const tile of index.regions) {
          if (
@@ -88,7 +115,7 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
            !Array.isArray(tile.bounds) ||
            tile.bounds.length !== 4 ||
            !tile.bounds.every(Number.isFinite) ||
-@@ -156,8 +188,8 @@
+@@ -156,8 +186,8 @@
          if (
            new Set(index.regions.map((t) => t.url)).size !==
              index.regions.length ||
@@ -99,7 +126,7 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
          )
            throw new TypeError('Index accounting mismatch');
          const ref = index.aggregates;
-@@ -165,7 +197,7 @@
+@@ -165,7 +195,7 @@
            partitioned = true;
            cachedCounts = undefined;
            if (!bounds)
@@ -108,7 +135,7 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
                schemaVersion: 1,
                kind: 'gev-well-count-view',
                cells: [],
-@@ -173,7 +205,7 @@
+@@ -173,14 +203,14 @@
                total: index.indexedRecords,
                reason: 'No visible ellipsoid',
                coverageComplete: false,
@@ -117,7 +144,15 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
            const loaded = await partitionedLoader.load(
              ref,
              index.indexedRecords,
-@@ -191,7 +223,7 @@
+             bounds,
+             countBudget,
+             (part) =>
+-              read(base + part.url, part.sha256, part.bytes, part.bytes),
++              read(part.url, part.sha256, part.bytes, part.bytes),
+           );
+           grids = loaded.grids;
+           countCapped = loaded.capped;
+@@ -191,7 +221,7 @@
            )
              throw new TypeError('Invalid count reference');
            if (!bounds)
@@ -126,7 +161,7 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
                schemaVersion: 1,
                kind: 'gev-well-count-view',
                cells: [],
-@@ -199,7 +231,7 @@
+@@ -199,7 +229,7 @@
                total: index.indexedRecords,
                reason: 'No visible ellipsoid',
                coverageComplete: false,
@@ -135,7 +170,16 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
            if (
              cachedCounts?.sha === ref.sha256 &&
              cachedCounts.total === index.indexedRecords
-@@ -224,7 +256,7 @@
+@@ -207,7 +237,7 @@
+             grids = cachedCounts.grids;
+           else {
+             grids = validateCountGrids(
+-              await read(base + ref.url, ref.sha256, 32 * 1024 * 1024),
++              await read(ref.url, ref.sha256, 32 * 1024 * 1024),
+               index.indexedRecords,
+             );
+             cachedCounts = {
+@@ -224,7 +254,7 @@
          0,
        );
        const over =
@@ -144,7 +188,7 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
        if (grids && (!bounds || over)) {
          const view = {
            ...countView(
-@@ -245,7 +277,7 @@
+@@ -245,13 +275,13 @@
          // A source-only caller has no screen resolution evidence. Do not eagerly
          // hydrate arbitrary detail islands at national zoom. The app supplies its
          // existing screen-aware eligibility callback for mixed views.
@@ -153,7 +197,14 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
          const startBytes = totalBytes;
          const mixed = await refineCountView(
            view,
-@@ -259,7 +291,7 @@
+           index,
+           async (tile) => {
+-            const pack = await read(base + tile.url, tile.sha256);
++            const pack = await read(tile.url, tile.sha256);
+             if (totalBytes - startBytes > 16 * 1024 * 1024)
+               throw new TypeError('Detail byte budget');
+             return pack;
+@@ -259,7 +289,7 @@
            detailPriority,
          );
          combined.throwIfAborted();
@@ -162,7 +213,16 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
        }
        if (over)
          throw new TypeError('Detail budget exceeded; count index required');
-@@ -294,12 +326,12 @@
+@@ -269,7 +299,7 @@
+       const acquisitions = new Map();
+       const detailStartBytes = totalBytes;
+       const packs = await readTiles(selected, (tile) =>
+-        read(base + tile.url, tile.sha256),
++        read(tile.url, tile.sha256),
+       );
+       for (const [i, tile] of selected.entries()) {
+         const pack = validateWellPack(packs[i]);
+@@ -294,12 +324,12 @@
            acquisitions.set(JSON.stringify(a), a);
          if (acquisitions.size > 256) {
            if (grids)
@@ -177,7 +237,7 @@ diff --git a/src/layers/usGroundwater/spatialSource.js b/src/layers/usGroundwate
            throw new TypeError('Detail provenance budget');
          }
        }
-@@ -322,13 +354,13 @@
+@@ -322,13 +352,13 @@
            country: 'US',
            complete: false,
            indexed: true,
@@ -267,7 +327,7 @@ diff --git a/src/layers/usGroundwater/countRenderer.js b/src/layers/usGroundwate
 diff --git a/src/layers/usGroundwater/spatialSource.test.mjs b/src/layers/usGroundwater/spatialSource.test.mjs
 --- a/src/layers/usGroundwater/spatialSource.test.mjs
 +++ b/src/layers/usGroundwater/spatialSource.test.mjs
-@@ -421,3 +421,16 @@
+@@ -421,3 +421,46 @@
    const { validateCountView } = await import('./countGrids.js');
    assert.throws(() => validateCountView(bad), /overlaps/);
  });
@@ -283,4 +343,34 @@ diff --git a/src/layers/usGroundwater/spatialSource.test.mjs b/src/layers/usGrou
 +  index={schemaVersion:999,kind:'invalid',sourceKind:'USGWD',children:[],regions:[],indexedRecords:123,catalogRecords:987,unmappedRecords:864};
 +  await assert.rejects(source.getSnapshot());assert.equal(published.length,1);
 +  assert.equal(published[0].catalogRecords,6);
++});
++
++
++test('allowlisted HTTPS data origin loads root and hashed detail inside version directory', async () => {
++  const h = harness(), calls = [];
++  const base = 'https://data.example.test/wells/releases/synthetic-001/';
++  const source = createSpatialWellSource({base, allowedDataOrigins:['https://data.example.test'], fetchImpl:async (url, options) => {
++    assert.ok(url.startsWith(base));
++    assert.equal(options.credentials,'omit'); assert.equal(options.redirect,'error');
++    assert.equal(options.cache,'no-cache');
++    calls.push(url);
++    const relative = url.slice(base.length);
++    return new Response(relative === 'index.json' ? JSON.stringify(h.index) : h.bodies.get('/well-index-v1/'+relative));
++  }});
++  const pack = await source.getSnapshot({bounds:[0,0,5,5]});
++  assert.equal(pack.records.length,1);
++  assert.deepEqual(calls,[base+'index.json',base+h.index.regions[0].url]);
++});
++
++test('remote hash tampering and manifest URL escape still fail closed', async () => {
++  const h = harness(), calls = [];
++  const base = 'https://data.example.test/wells/';
++  const source = createSpatialWellSource({base, allowedDataOrigins:['https://data.example.test'], fetchImpl:async url => {
++    assert.ok(url.startsWith(base)); calls.push(url);
++    return new Response(url === base+'index.json' ? JSON.stringify(h.index) : '{}');
++  }});
++  await assert.rejects(source.getSnapshot({bounds:[0,0,5,5]}), /hash/);
++  calls.length=0; h.index.regions[0].url='https://evil.example.test/tile.json';
++  await assert.rejects(source.getSnapshot(), /tile/);
++  assert.deepEqual(calls,[base+'index.json']);
 +});

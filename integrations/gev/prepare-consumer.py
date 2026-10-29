@@ -37,6 +37,7 @@ patch = HERE/'usgwd-consumer.patch'
 for check in [True, False]:
     subprocess.run(['git', 'apply', *(['--check'] if check else []), '--directory', target.relative_to(ROOT).as_posix(), str(patch)], cwd=ROOT, check=True)
 shutil.copyfile(HERE/'historicalPack.mjs', target/'src/layers/usGroundwater/historicalPack.mjs')
+shutil.copyfile(HERE/'dataBase.mjs', target/'src/layers/usGroundwater/dataBase.mjs')
 for p in (ROOT/'fixtures/us-groundwater/v1').iterdir():
     if p.is_file():
         dest=target/'fixtures/us-groundwater/v1'/p.name;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,dest)
