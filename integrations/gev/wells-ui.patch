@@ -129,10 +129,18 @@ index 68c232b..9591783 100644
    );
    const cluster = { point: {}, label: {}, billboard: {} };
 diff --git a/src/layers/usGroundwater/index.js b/src/layers/usGroundwater/index.js
-index 2dbd405..fca4816 100644
+index 2dbd405..4e598fd 100644
 --- a/src/layers/usGroundwater/index.js
 +++ b/src/layers/usGroundwater/index.js
-@@ -147,11 +147,6 @@ export function createUsGroundwaterLayer({
+@@ -14,6 +14,7 @@ import {
+ } from '../../data/cameraSensitivity.js';
+ import {
+   clearSelectedEntityContextForLayer,
++  getContextStore,
+   registerEntityContext,
+   removeEntityContextsForLayer,
+   selectEntityContext,
+@@ -147,11 +148,6 @@ export function createUsGroundwaterLayer({
          destroyed
        )
          return;
@@ -144,7 +152,7 @@ index 2dbd405..fca4816 100644
        pack = next;
        error = null;
        if (!attached) await attach();
-@@ -164,6 +159,7 @@ export function createUsGroundwaterLayer({
+@@ -164,6 +160,7 @@ export function createUsGroundwaterLayer({
          !destroyed
        ) {
          error = failure?.message ?? msg('Source unavailable');
@@ -152,7 +160,7 @@ index 2dbd405..fca4816 100644
          status();
        }
      } finally {
-@@ -174,6 +170,12 @@ export function createUsGroundwaterLayer({
+@@ -174,6 +171,12 @@ export function createUsGroundwaterLayer({
      }
    }
    const recordsByEntity = new Map();
@@ -165,7 +173,7 @@ index 2dbd405..fca4816 100644
    function selectWell(entity) {
      const record = recordsByEntity.get(entity?.id);
      if (!enabled || !attached || !record) return false;
-@@ -233,6 +235,8 @@ export function createUsGroundwaterLayer({
+@@ -233,6 +236,8 @@ export function createUsGroundwaterLayer({
    });
    const status = () => onStatus(stats());
    function release() {
@@ -174,15 +182,22 @@ index 2dbd405..fca4816 100644
      countRenderer?.clear();
      selectedGroupCount = null;
      attached = false;
-@@ -262,9 +266,15 @@ export function createUsGroundwaterLayer({
+@@ -262,9 +267,22 @@ export function createUsGroundwaterLayer({
    }
    function draw() {
      if (!enabled || destroyed || !pack || !dataSource || !attached) return;
 +    // Capture the current owner at draw time: an intervening user selection
 +    // must never be replaced by the result of an older viewport request.
-+    const selectedId = recordsByEntity.has(viewer.selectedEntity?.id)
++    const viewerWellId = recordsByEntity.has(viewer.selectedEntity?.id)
 +      ? viewer.selectedEntity.id
 +      : null;
++    const selectedId = viewerWellId &&
++      (!hasContextHost() || getContextStore().selectedEntityId === viewerWellId)
++      ? viewerWellId : null;
++    if (viewerWellId && !selectedId) {
++      viewer.selectedEntity = undefined;
++      onSelect(null);
++    }
      const counted = pack.kind === 'gev-well-count-view';
      const detail = counted ? pack.detailPack : pack;
      if (counted && !detail?.records.length) {
@@ -190,7 +205,7 @@ index 2dbd405..fca4816 100644
        recordsByEntity.clear();
        incumbents.clear();
        if (hasContextHost()) removeEntityContextsForLayer('us-groundwater');
-@@ -385,6 +395,7 @@ export function createUsGroundwaterLayer({
+@@ -385,6 +403,7 @@ export function createUsGroundwaterLayer({
          accent: '#00ffff',
          cardStyle: 'tactical',
          selected: true,
@@ -198,7 +213,7 @@ index 2dbd405..fca4816 100644
          anchorRadiusPx: 5,
          anchorRadiusScale: null,
        };
-@@ -402,6 +413,15 @@ export function createUsGroundwaterLayer({
+@@ -402,6 +421,15 @@ export function createUsGroundwaterLayer({
          });
        }
      }
@@ -215,10 +230,18 @@ index 2dbd405..fca4816 100644
        countRenderer.draw(
          counted
 diff --git a/src/layers/usGroundwater/index.test.mjs b/src/layers/usGroundwater/index.test.mjs
-index 82a8b7f..fc6f004 100644
+index 82a8b7f..81e75b4 100644
 --- a/src/layers/usGroundwater/index.test.mjs
 +++ b/src/layers/usGroundwater/index.test.mjs
-@@ -12,6 +12,39 @@ const fixture = JSON.parse(
+@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
+ import fs from 'node:fs';
+ import * as Cesium from 'cesium';
+ import { createUsGroundwaterLayer } from './index.js';
++import { getContextStore, selectEntityContext, selectTrackedSubjectContext } from '../../data/contextStore.js';
+ const fixture = JSON.parse(
+   fs.readFileSync(
+     new URL(
+@@ -12,6 +13,72 @@ const fixture = JSON.parse(
    ),
  );
  
@@ -255,22 +278,46 @@ index 82a8b7f..fc6f004 100644
 +  layer.destroy();
 +});
 +
++test('a deferred refresh does not reclaim a newer foreign context selection', async () => {
++  const previousWindow = globalThis.window;
++  globalThis.window = { dispatchEvent() {} };
++  try {
++    const owned = ownedViewer(() => false);
++    let finish;
++    let reads = 0;
++    const layer = createUsGroundwaterLayer({
++      source: { viewport: true, getSnapshot() {
++        if (++reads === 1) return Promise.resolve(fixture);
++        return new Promise((resolve) => { finish = resolve; });
++      } },
++      validatePack: (value) => value,
++    });
++    layer.init(owned.viewer);
++    assert.equal(await layer.enable(), true);
++    const entity = owned.collection.get(0).entities.values[0];
++    owned.viewer.selectedEntity = entity;
++    selectEntityContext(entity);
++    owned.viewer.camera.moveEnd.raiseEvent();
++    await new Promise((resolve) => setImmediate(resolve));
++    selectTrackedSubjectContext({ id: 'foreign:1', layerId: 'flights' });
++    finish(fixture);
++    await new Promise((resolve) => setImmediate(resolve));
++    assert.equal(getContextStore().selectedEntityId, 'foreign:1');
++    assert.notEqual(owned.viewer.selectedEntity?.id, entity.id);
++    layer.destroy();
++  } finally {
++    if (previousWindow === undefined) delete globalThis.window;
++    else globalThis.window = previousWindow;
++  }
++});
++
  function ownedViewer(rejectAdd) {
    const collection = new Cesium.DataSourceCollection();
    const attempts = [];
 diff --git a/src/ui/layerPanel.js b/src/ui/layerPanel.js
-index 55d8028..f9ff711 100644
+index 55d8028..54d7d64 100644
 --- a/src/ui/layerPanel.js
 +++ b/src/ui/layerPanel.js
-@@ -368,7 +368,7 @@ export class LayerPanel {
- 
-       const bottomRow = document.createElement('div');
-       bottomRow.className = 'data-toggle-meta';
--      setRowText(bottomRow, this._buildMetaText(layer));
-+      this._syncMeta(bottomRow, layer);
- 
-       row.appendChild(topRow);
-       row.appendChild(bottomRow);
 @@ -486,9 +486,9 @@ export class LayerPanel {
          count: formatNumber(stats.catalogCount),
        });
@@ -283,40 +330,3 @@ index 55d8028..f9ff711 100644
      row.classList.toggle('data-toggle-row--count-line', phrase);
      count.classList.toggle('data-count-empty', text === '—');
    }
-@@ -623,7 +623,7 @@ export class LayerPanel {
- 
-       const meta = row.querySelector('.data-toggle-meta');
-       if (meta) {
--        setRowText(meta, this._buildMetaText(layer));
-+        this._syncMeta(meta, layer);
-       }
- 
-       this._syncRowControls(
-@@ -635,6 +635,27 @@ export class LayerPanel {
-     this._refreshWeatherPanel();
-   }
- 
-+  _syncMeta(node, layer) {
-+    const full = this._buildMetaText(layer);
-+    const stats = layer.stats || {};
-+    if (layer.id === 'us-groundwater' && layer.enabled && stats.mode === 'snapshot' && !stats.loading && !stats.sourceUnavailable && !layer.lifecycleUncertain && !['enabling', 'disabling'].includes(layer.lifecycleState) && !stats.error && !stats.lastError && !stats.managerRefreshError) {
-+      const mode = stats.displayMode === 'groups' ? t('Grouped locations') : stats.displayMode === 'mixed' ? t('Grouped locations') + ' + ' + t('Individual records') : t('Individual records');
-+      const selected = Number.isSafeInteger(stats.selectedGroupCount)
-+        ? ' · ' + t('Selected group: {count}', { count: formatNumber(stats.selectedGroupCount) }) : '';
-+      setRowText(node, `${sourceLabel(stats.source || layer.source)} · ${t('Partial coverage')} · ${mode}${selected}`);
-+      node.title = full;
-+      node.tabIndex = 0;
-+      node.setAttribute('role', 'note');
-+      node.setAttribute('aria-label', full);
-+    } else {
-+      setRowText(node, full);
-+      node.title = '';
-+      node.tabIndex = -1;
-+      node.removeAttribute?.('aria-label');
-+      node.removeAttribute?.('role');
-+    }
-+  }
-+
-   _buildMetaText(layer) {
-     const stats = layer.stats || {};
-     const feedState = layerFeedState(stats);
