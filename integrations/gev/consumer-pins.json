@@ -20,7 +20,7 @@
   "uiPatches": [
     {
       "path": "wells-ui.patch",
-      "sha256": "2cc4501cfff2b783ee639657b0910a72ce2d7009333e2e2a0ee01fbc727a7601"
+      "sha256": "2cb19b60877629cea938f1100681885dc58bc87ced23150f4bee5a11f226c1a9"
     }
   ],
   "updatedFiles": [
