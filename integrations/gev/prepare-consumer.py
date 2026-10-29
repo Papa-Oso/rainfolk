@@ -61,4 +61,10 @@ while pending:
 for entry in pins['updatedFiles']:
     b=(target/entry['path']).read_bytes().replace(b'\r\n',b'\n')
     if hashlib.sha256(b).hexdigest()!=entry['afterSha256']: raise ValueError('Applied source hash mismatch')
+for entry in pins.get('uiPatches', []):
+    patch = HERE/entry['path']
+    if hashlib.sha256(patch.read_bytes()).hexdigest() != entry['sha256']:
+        raise ValueError('UI patch hash mismatch')
+    for check in [True, False]:
+        subprocess.run(['git', 'apply', *(['--check'] if check else []), '--directory', target.relative_to(ROOT).as_posix(), str(patch)], cwd=ROOT, check=True)
 print(json.dumps(dict(cleanBase=revision,patchesVerified=True,closureFiles=len(seen),sourceCheckoutModified=False,networkRequests=0)))

@@ -17,6 +17,12 @@
       "sha256": "f0f7d6fbf6800121de9f31815b9e06eb2ea44f523a0aaa23f91d9bb6f2475d62"
     }
   ],
+  "uiPatches": [
+    {
+      "path": "wells-ui.patch",
+      "sha256": "2cc4501cfff2b783ee639657b0910a72ce2d7009333e2e2a0ee01fbc727a7601"
+    }
+  ],
   "updatedFiles": [
     {
       "path": "src/layers/usGroundwater/pack.js",
