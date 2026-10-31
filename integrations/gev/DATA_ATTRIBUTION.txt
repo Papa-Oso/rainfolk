@@ -1,0 +1,24 @@
+Historical U.S. Groundwater Well Database (USGWD)
+
+Publisher-requested citation (resource page checked 2026-10-29):
+Lin, C., Alex, M., Musab, W., Marston, L. (2026).
+A Database of Groundwater Wells in the United States. HydroShare.
+https://doi.org/10.4211/hs.8b02895f02c14dd1a749bcc5584a5c55
+https://www.hydroshare.org/resource/8b02895f02c14dd1a749bcc5584a5c55/
+
+Source data: Creative Commons Attribution 4.0 International (CC BY 4.0).
+https://creativecommons.org/licenses/by/4.0/
+No endorsement by the original creators is implied.
+
+Rainfolk adaptations: deterministic field validation, raw-value and provenance
+retention, release-qualified identities, count/detail partitioning, and explicit
+regional NAD83-to-WGS84 display transformations. Original NAD83 values and
+quality flags remain in provenance. Invalid quantities are flagged, not guessed.
+These are historical source records with incomplete coverage, unknown physical
+well identity and unverified source location accuracy. They do not establish
+current operation, drinking-water safety, ownership or absence of wells.
+
+The citation year reflects the publisher's current citation, not a measurement
+date or proof of data freshness. See per-source dates, release and file hashes.
+Code licenses do not replace the data license. Retain these credits with the
+data feed and an accessible source credit in its consumer.

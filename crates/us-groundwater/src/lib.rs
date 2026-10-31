@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod texas_sdr;
+pub mod usgwd_map;
 
 pub const MAX_BYTES: u64 = 8 * 1024 * 1024;
 pub const MAX_SITES: usize = 2000;

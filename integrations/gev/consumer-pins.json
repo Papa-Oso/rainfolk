@@ -1,0 +1,53 @@
+{
+  "gevBase": "9d3548c27c2cd4bf80ea39cbb3f0634ab1c5a06b",
+  "basePatches": [
+    {
+      "path": "base-groundwater-consumer.patch",
+      "sha256": "75adc94c85930a44f7bf74f2f62fa1f73628cb8af9e0967625ac6c461a021e31",
+      "selection": "Source-only; fixture hunks omitted. Reuse the four already committed Rainfolk fixtures/us-groundwater/v1 files.",
+      "omittedPaths": [
+        "fixtures/us-groundwater/v1/README.md",
+        "fixtures/us-groundwater/v1/capture.json",
+        "fixtures/us-groundwater/v1/expected-pack.json",
+        "fixtures/us-groundwater/v1/sha256.json"
+      ]
+    },
+    {
+      "path": "base-shared-host-cooldown.patch",
+      "sha256": "f0f7d6fbf6800121de9f31815b9e06eb2ea44f523a0aaa23f91d9bb6f2475d62"
+    }
+  ],
+  "uiPatches": [
+    {
+      "path": "wells-ui.patch",
+      "sha256": "2cb19b60877629cea938f1100681885dc58bc87ced23150f4bee5a11f226c1a9"
+    }
+  ],
+  "updatedFiles": [
+    {
+      "path": "src/layers/usGroundwater/pack.js",
+      "beforeSha256": "07b29bfd37036306512214bc269cfda4fa7e9365de60023abd62dcef7fac2985",
+      "afterSha256": "af165ee31c13efe2d1d3988cab7423d83d0f37c5620e53f97fdc028cffa8775a"
+    },
+    {
+      "path": "src/layers/usGroundwater/spatialSource.js",
+      "beforeSha256": "32fca0ec8687bee3814d2822e493d8eb9d32b8d8feb025a081896f0b05914a48",
+      "afterSha256": "0e0e9770a16e4c69e44fb66bcfb16743a8687ec92b471e68b3f3e6b0ec6b1255"
+    },
+    {
+      "path": "src/layers/usGroundwater/index.js",
+      "beforeSha256": "77b26f4642dc9b943567eca35c330f9bd516da34a51e0c46ad8552281d6d35a8",
+      "afterSha256": "1caa8343a0c527fa55d4bf2977a043eaa777527bff8d6bf0c2f868007505aaff"
+    },
+    {
+      "path": "src/layers/usGroundwater/countRenderer.js",
+      "beforeSha256": "dbc5efdc22880556338b0cc15d726d451db71196bdb74bd1a50763c80070e926",
+      "afterSha256": "ad28198bfc7da4de63bab40e89acaaa6be43ddf8e76ff949bf9c5fa5a0d64d88"
+    },
+    {
+      "path": "src/layers/usGroundwater/spatialSource.test.mjs",
+      "beforeSha256": "c04abe7ab17a73706cded72dbe1d9c7c7f32c941899bcc87677df74bbf6f0157",
+      "afterSha256": "12a87508a67849c0db03b7887d61a0b3c5e04f316c7b29a1f9bd59270e642358"
+    }
+  ]
+}
