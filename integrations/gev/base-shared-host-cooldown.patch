@@ -1,0 +1,268 @@
+diff --git a/src/overlays/worldOverlay.js b/src/overlays/worldOverlay.js
+--- a/src/overlays/worldOverlay.js
++++ b/src/overlays/worldOverlay.js
+@@ -289,6 +289,31 @@
+ 
+ function nowMs() {
+   return globalThis.performance?.now?.() ?? Date.now();
++}
++
++// Static domains need one wake-up when a live candidate's re-entry cooldown
++// expires. Render requests alone cannot cause the arbiter to solve again.
++let _cooldownTimer = null;
++let _cooldownDeadline = Infinity;
++function cancelCooldownWake() {
++  if (_cooldownTimer !== null) clearTimeout(_cooldownTimer);
++  _cooldownTimer = null;
++  _cooldownDeadline = Infinity;
++}
++function wakeAfterCooldown() {
++  _cooldownTimer = null;
++  _cooldownDeadline = Infinity;
++  if (!_destroyed && _viewer) invalidateHost();
++}
++function scheduleCooldownWake(deadline, timestamp) {
++  if (deadline === _cooldownDeadline) return;
++  cancelCooldownWake();
++  if (!Number.isFinite(deadline)) return;
++  _cooldownDeadline = deadline;
++  _cooldownTimer = setTimeout(
++    wakeAfterCooldown,
++    Math.max(1, Math.ceil(deadline - timestamp)),
++  );
+ }
+ 
+ function clamp01(value, fallback = 1) {
+@@ -855,6 +880,7 @@
+ }
+ 
+ function invalidateHost({ solve = true, layout = false } = {}) {
++  if (solve) cancelCooldownWake();
+   if (solve) _solveDirty = true;
+   if (layout) _occludersDirty = true;
+   _canvasNeedsClear = true;
+@@ -2282,16 +2308,20 @@
+ }
+ 
+ function solveDomains(timestamp) {
++  // A render task can beat delivery of an already-due timeout. Consume that
++  // deadline as a solve trigger before recomputing/cancelling the next wake.
++  const cooldownSolveDue = timestamp >= _cooldownDeadline;
+   _paintCount = 0;
+   let solveMs = 0;
+   let selectedCount = 0;
+   let fadingCount = 0;
+   let solveRevision = 0;
++  let cooldownDeadline = Infinity;
+   for (let d = 0; d < _domainList.length; d++) {
+     const domain = _domainList[d];
+     const movingSolveDue =
+       domain.moving && timestamp - domain.lastSolveAt >= domain.solveIntervalMs;
+-    if (_solveDirty || movingSolveDue) {
++    if (_solveDirty || movingSolveDue || cooldownSolveDue) {
+       const started = nowMs();
+       domain.arbiter.solve(domain.candidates, {
+         capacity: Math.min(domain.capacity, domain.candidates.length),
+@@ -2304,6 +2334,20 @@
+       });
+       solveMs += nowMs() - started;
+       domain.lastSolveAt = timestamp;
++    }
++    // Only current, projected candidates with usable placements can benefit
++    // from a deadline solve. Removed/hidden/occluded entries must not keep the
++    // host awake. One timer covers the earliest deadline across all domains.
++    for (let i = 0; i < domain.candidateCount; i++) {
++      const candidate = domain.candidates[i];
++      const state = domain.arbiter.states.get(candidate.key);
++      if (
++        !candidate.stateless &&
++        state &&
++        !state.selected &&
++        state.cooldownUntil > timestamp
++      )
++        cooldownDeadline = Math.min(cooldownDeadline, state.cooldownUntil);
+     }
+     for (let p = 0; p < domain.protectedCount; p++) {
+       const record = domain.protectedCandidates[p]._record;
+@@ -2346,6 +2390,7 @@
+   }
+   _paintQueue.length = _paintCount;
+   _solveDirty = false;
++  scheduleCooldownWake(cooldownDeadline, timestamp);
+   _diagnostics.solveMs = solveMs;
+   _diagnostics.selectedCount = selectedCount;
+   _diagnostics.fadingCount = fadingCount;
+@@ -2713,6 +2758,7 @@
+ 
+ /** Remove all listeners, observers, entries, diagnostics, and overlay DOM. */
+ export function destroyWorldOverlay() {
++  cancelCooldownWake();
+   if (_sonarRenderTimer !== null) clearTimeout(_sonarRenderTimer);
+   _sonarRenderTimer = null;
+   // Tearing down a host that was never initialized must not arm the
+diff --git a/src/overlays/worldOverlay.test.mjs b/src/overlays/worldOverlay.test.mjs
+--- a/src/overlays/worldOverlay.test.mjs
++++ b/src/overlays/worldOverlay.test.mjs
+@@ -12,6 +12,8 @@
+ } from '../celestialRing.js';
+ import { createCctvThumbnailOverlayEntry, createFrameSlot } from '../data/cctvCards.js';
+ import { combinedOverlayAlpha } from './worldOverlayDraw.js';
++import { createInfrastructureOverlayEntry } from '../data/infrastructureOverlayEntry.js';
++import { createTrackedOverlayEntry } from '../data/trackedReadout.js';
+ import {
+   AMBIENT_CARD_COLLISION_CAPACITY,
+   WORLD_OVERLAY_OCCLUDER_SELECTORS,
+@@ -93,6 +95,7 @@
+   dpr = 2,
+   occluderRect = null,
+   occluders = [],
++  mockTimers = false,
+ } = {}) {
+   const byId = new Map();
+   const paintTrace = [];
+@@ -102,6 +105,18 @@
+   const selectorQueries = { matches: 0, querySelector: 0, querySelectorAll: 0 };
+   const originalPerformance = Object.getOwnPropertyDescriptor(globalThis, 'performance');
+   let currentTime = 0;
++  const originalSetTimeout = globalThis.setTimeout;
++  const originalClearTimeout = globalThis.clearTimeout;
++  const timers = new Map();
++  let timerId = 0;
++  if (mockTimers) {
++    globalThis.setTimeout = (callback, delay) => {
++      const id = ++timerId;
++      timers.set(id, { callback, deadline: currentTime + delay });
++      return id;
++    };
++    globalThis.clearTimeout = (id) => timers.delete(id);
++  }
+   Object.defineProperty(globalThis, 'performance', {
+     configurable: true,
+     value: { now: () => currentTime },
+@@ -392,9 +407,23 @@
+     mutationObservers,
+     layoutReads,
+     selectorQueries,
+-    advanceTime(ms) { currentTime += ms; },
++    pendingTimers() { return [...timers.values()].map((timer) => timer.deadline); },
++    advanceTime(ms, { deliverTimers = true } = {}) {
++      const end = currentTime + ms;
++      while (deliverTimers) {
++        const next = [...timers.entries()].filter(([, timer]) => timer.deadline <= end)
++          .sort((a, b) => a[1].deadline - b[1].deadline)[0];
++        if (!next) break;
++        timers.delete(next[0]); currentTime = Math.max(currentTime, next[1].deadline); next[1].callback();
++      }
++      currentTime = end;
++    },
+     cleanup() {
+       destroyWorldOverlay();
++      if (mockTimers) {
++        globalThis.setTimeout = originalSetTimeout;
++        globalThis.clearTimeout = originalClearTimeout;
++      }
+       delete globalThis.document;
+       delete globalThis.window;
+       delete globalThis.ResizeObserver;
+@@ -2297,3 +2326,101 @@
+     assert.equal(paint(), 1, 'deselect restores the ambient card without re-entry cooldown');
+   } finally { env.cleanup(); }
+ });
++
++// No groundwater lifecycle is involved: this is the shared host's deadline contract.
++function staticDismissalFixture() {
++  const env = installMockEnvironment({ width: 400, height: 300, dpr: 1, mockTimers: true });
++    initWorldOverlay(env.viewer);
++    const anchor = position();
++    const entry = {
++      ...createInfrastructureOverlayEntry({ id: 'site', source: 'static-fixture', position: anchor, title: 'A location', details: ['USGS'] }),
++      horizonCull: false, edgeFade: 'none', distanceScale: undefined,
++    };
++    setOverlayEntries('static-fixture', [entry], { collisionCapacity: 24, moving: false });
++    env.postRender.raise(); env.advanceTime(200); env.postRender.raise();
++    assert.ok(getOverlayPaintRect('static-fixture', 'site'), 'initial ambient flag paints');
++    const card = createTrackedOverlayEntry({ id: 'selected-site', gevDisplayPosition: () => anchor,
++      gevLabelModel: { title: 'Selected source-backed location', details: Array(16).fill('Source-backed observation and coverage details') } });
++  return { env, select() {
++    setOverlayEntries('tracked', [{ ...card, horizonCull: false, edgeFade: 'none', anchorRadiusScale: undefined }], { collisionCapacity: 0, moving: true });
++    env.postRender.raise(); env.advanceTime(400); env.postRender.raise();
++    assert.ok(getOverlayPaintRect('tracked', card.id), 'selected card paints');
++    assert.equal(getOverlayPaintRect('static-fixture', 'site'), null, 'selected card excludes ambient footprint');
++  }, dismiss() { clearOverlaySource('tracked'); env.postRender.raise(); } };
++}
++
++test('static ambient flag recovers after repeated tracked-card dismissals with one idle deadline wake', () => {
++  const { env, select, dismiss } = staticDismissalFixture();
++  try {
++    for (let cycle = 0; cycle < 3; cycle++) {
++      select();
++      assert.equal(env.pendingTimers().length, 0, 'no wake for a flag still excluded by a protected card');
++      dismiss();
++      assert.equal(env.pendingTimers().length, 1, 'one pending cooldown deadline');
++      const deadline = env.pendingTimers()[0];
++      const revision = getWorldOverlayDiagnostics().solveRevision;
++      for (let frame = 0; frame < 4; frame++) env.postRender.raise();
++      assert.deepEqual(env.pendingTimers(), [deadline], 'steady frames do not postpone or duplicate the deadline');
++      const requests = env.viewer.scene.requestRenderCount;
++      env.advanceTime(1000);
++      assert.equal(env.viewer.scene.requestRenderCount, requests, 'no polling during idle cooldown');
++      env.advanceTime(100);
++      assert.equal(env.viewer.scene.requestRenderCount, requests + 1, 'deadline requests one frame even when rendering is idle');
++      env.postRender.raise(); env.advanceTime(200); env.postRender.raise();
++      assert.ok(getOverlayPaintRect('static-fixture', 'site'), 'flag recovers without camera motion or layer republishing');
++      assert.ok(getWorldOverlayDiagnostics().solveRevision > revision);
++      assert.equal(env.pendingTimers().length, 0, 'recovered flag leaves no polling timer');
++    }
++    const requests = env.viewer.scene.requestRenderCount;
++    env.advanceTime(10000);
++    assert.equal(env.viewer.scene.requestRenderCount, requests, 'fully settled host stays idle');
++  } finally { env.cleanup(); }
++});
++
++test('removing or hiding a pending ambient source cancels its cooldown wake', () => {
++  for (const remove of [() => clearOverlaySource('static-fixture'), () => setOverlaySourceVisible('static-fixture', false)]) {
++    const { env, select, dismiss } = staticDismissalFixture();
++    try {
++      select(); dismiss(); assert.equal(env.pendingTimers().length, 1);
++      remove(); assert.equal(env.pendingTimers().length, 0);
++      env.postRender.raise();
++      const requests = env.viewer.scene.requestRenderCount;
++      env.advanceTime(10000);
++      assert.equal(env.viewer.scene.requestRenderCount, requests);
++      assert.equal(getOverlayPaintRect('static-fixture', 'site'), null);
++    } finally { env.cleanup(); }
++  }
++});
++
++test('destroy cancels a pending cooldown and cannot wake a replacement host', () => {
++  const { env, select, dismiss } = staticDismissalFixture();
++  try {
++    select(); dismiss(); assert.equal(env.pendingTimers().length, 1);
++    destroyWorldOverlay(); assert.equal(env.pendingTimers().length, 0);
++    initWorldOverlay(env.viewer);
++    const requests = env.viewer.scene.requestRenderCount;
++    env.advanceTime(10000);
++    assert.equal(env.viewer.scene.requestRenderCount, requests);
++    assert.equal(getWorldOverlayDiagnostics().entryCount, 0);
++  } finally { env.cleanup(); }
++});
++
++test('a frame arriving after the cooldown deadline solves before delayed timers are delivered', () => {
++  const { env, select, dismiss } = staticDismissalFixture();
++  try {
++    select(); dismiss();
++    const revision = getWorldOverlayDiagnostics().solveRevision;
++    assert.equal(env.pendingTimers().length, 1);
++    env.advanceTime(1101, { deliverTimers: false });
++    assert.equal(env.pendingTimers().length, 1, 'deadline passed but callback has not run');
++    env.postRender.raise();
++    assert.ok(getWorldOverlayDiagnostics().solveRevision > revision, 'overdue frame must solve before discarding the deadline');
++    assert.equal(env.pendingTimers().length, 0, 'successful frame cancels the redundant timer');
++    const requests = env.viewer.scene.requestRenderCount;
++    env.advanceTime(0);
++    assert.equal(env.viewer.scene.requestRenderCount, requests, 'subsequent timer delivery does not wake an already solved host');
++    env.advanceTime(200); env.postRender.raise();
++    assert.ok(getOverlayPaintRect('static-fixture', 'site'), 'flag reappears without camera motion');
++    assert.equal(env.pendingTimers().length, 0);
++  } finally { env.cleanup(); }
++});

@@ -7,10 +7,12 @@ GEV checkout; this release candidate does not vendor the application or run it.
 Recorded local upstream base: `9d3548c27c2cd4bf80ea39cbb3f0634ab1c5a06b`.
 Recorded builder HEAD: `a2c3a9766e251eb0311368cc77a1215d34221ec3`, plus uncommitted
 layer/collector changes. Neither is a claim about current upstream main. A
-reviewed consumer source patch with a fixed final revision and hashes still blocks
-reproducible GEV consumer delivery and legacy retirement. It does not block a
-standalone producer release once that producer's own review gates pass. This
-document alone is not a reproducible app installation.
+historical builder status is superseded for the scoped Rainfolk water layer by
+[the source-only consumer kit](../integrations/gev/README.md). That kit pins the
+base and affected-file hashes, prepares an isolated source tree from existing
+local Git objects, and builds with existing dependencies. It does not modify an
+installed GEV app. Consumer publication, visual acceptance and legacy retirement
+remain separate gates. This document alone is not an app installation.
 
 Consumer hooks are confined to the groundwater layer/source/pack modules,
 catalog/source registration, immutable layer token, shared overlays and layer
@@ -24,3 +26,11 @@ coordinate-mapping safety stop. Do not claim those builder checks are an
 independent release review. Before upstream/public consumer delivery, test the
 patch on its selected clean base with required upstream gates and actual desktop
 visual acceptance. Those tasks are separate from the producer offline test here.
+
+The historical-record extension and its staged detail compaction have passed
+fresh-context source review, offline producer tests, a clean pinned-base consumer
+build, and the actual consumer-loading tests. Local real-data index/transport
+checks are distinct from interactive visual acceptance. The current in-app
+browser attempt could not reach the local preview; visual acceptance remains
+pending. No upstream submission, installation change or deployment follows from
+these source checks. See [the historical map contract](USGWD_MAP.md).

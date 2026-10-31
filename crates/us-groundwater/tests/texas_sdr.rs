@@ -789,3 +789,19 @@ fn cli_reads_fixture_without_network_and_rejects_bad_mode() {
             .success()
     );
 }
+
+#[test]
+fn artifact_byte_limit_does_not_expand_source_capture_limit() {
+    let mut bytes = b"{}".to_vec();
+    bytes.resize(1024 * 1024 + 1, b' ');
+    assert!(gev_us_groundwater::texas_sdr::decode_capture_json(&bytes).is_err());
+    assert!(gev_us_groundwater::texas_sdr::decode_artifact_json(&bytes, 8 * 1024 * 1024).is_ok());
+    assert!(gev_us_groundwater::texas_sdr::decode_artifact_json(&bytes, 1024 * 1024).is_err());
+    assert!(
+        gev_us_groundwater::texas_sdr::decode_artifact_json(b"{}", 8 * 1024 * 1024 + 1).is_err()
+    );
+    assert!(
+        gev_us_groundwater::texas_sdr::decode_artifact_json(b"{\"a\":1,\"a\":2}", 8 * 1024 * 1024)
+            .is_err()
+    );
+}
