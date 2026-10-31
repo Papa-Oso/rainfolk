@@ -10,17 +10,19 @@ fn hash(bytes: &[u8]) -> String {
 struct Budget {
     started: std::time::Instant,
     bytes: std::cell::Cell<u64>,
+    seconds: u64,
 }
 impl Budget {
     fn new() -> Self {
         Self {
             started: std::time::Instant::now(),
             bytes: std::cell::Cell::new(0),
+            seconds: 300,
         }
     }
     fn check(&self) -> Result<(), Box<dyn std::error::Error>> {
-        if self.started.elapsed().as_secs() >= 300 {
-            return Err("index 300-second deadline".into());
+        if self.started.elapsed().as_secs() >= self.seconds {
+            return Err(format!("index {}-second deadline", self.seconds).into());
         }
         Ok(())
     }
@@ -633,11 +635,25 @@ fn run_input(
     out: &Path,
     historical: bool,
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    let budget_owner = Budget::new();
+    run_input_with_seconds(input, out, historical, 300)
+}
+fn run_input_with_seconds(
+    input: &Path,
+    out: &Path,
+    historical: bool,
+    seconds: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    if !(1..=900).contains(&seconds) || (!historical && seconds != 300) {
+        return Err("historical deadline must be 1..900 seconds".into());
+    }
+    let mut budget_owner = Budget::new();
+    budget_owner.seconds = seconds;
     let budget = &budget_owner;
     let started = budget.started;
     let mut historical_input = if historical {
-        Some(gev_us_groundwater::usgwd_map::Input::open(input, started)?)
+        Some(gev_us_groundwater::usgwd_map::Input::open_with_seconds(
+            input, started, seconds,
+        )?)
     } else {
         None
     };
@@ -675,9 +691,7 @@ fn run_input(
                 candidates.len()
             );
         }
-        if started.elapsed().as_secs() >= 300 {
-            return Err("index 300-second deadline".into());
-        }
+        budget.check()?;
         let pack_value;
         let candidate;
         let pack = if let Some(h) = &mut historical_input {
@@ -1030,6 +1044,7 @@ mod tests {
         let expired = Budget {
             started: std::time::Instant::now() - std::time::Duration::from_secs(301),
             bytes: std::cell::Cell::new(0),
+            seconds: 300,
         };
         assert!(read_detail_stage(&dir, &expired, &reference).is_err());
         fs::write(dir.join(name), b"{}").unwrap();
@@ -1045,8 +1060,23 @@ mod tests {
         let expired = Budget {
             started: std::time::Instant::now() - std::time::Duration::from_secs(301),
             bytes: std::cell::Cell::new(0),
+            seconds: 300,
         };
         assert!(write_immutable(&dir, &expired, "expired.json", b"x").is_err());
+        assert!(!dir.join("expired.json").exists());
+    }
+    #[test]
+    fn explicit_historical_deadline_is_finite_and_applies_to_final_writes() {
+        let dir = scratch("explicit-deadline");
+        for seconds in [0, 901, u64::MAX] {
+            assert!(run_input_with_seconds(Path::new("missing"), &dir, true, seconds).is_err());
+        }
+        let mut budget = Budget::new();
+        budget.seconds = 900;
+        budget.started = std::time::Instant::now() - std::time::Duration::from_secs(301);
+        assert!(budget.check().is_ok());
+        budget.started = std::time::Instant::now() - std::time::Duration::from_secs(901);
+        assert!(write_immutable(&dir, &budget, "expired.json", b"x").is_err());
         assert!(!dir.join("expired.json").exists());
     }
     #[test]
@@ -1519,14 +1549,22 @@ fn main() {
     }
     let historical = args.first().is_some_and(|s| s == "--usgwd");
     let args = if historical { &args[1..] } else { &args[..] };
-    if args.len() != 2 {
+    if args.len() != 2 && !(historical && args.len() == 3) {
         eprintln!(
-            "usage: well_index [--usgwd] <pinned-batches.json | normalized-manifest.json> <output-directory>"
+            "usage: well_index [--usgwd] <pinned-batches.json | normalized-manifest.json> <output-directory> [historical-deadline-seconds:1..900]"
         );
         std::process::exit(1);
     }
     match if historical {
-        run_input(Path::new(&args[0]), Path::new(&args[1]), true)
+        let seconds = if args.len() == 3 {
+            args[2]
+                .to_str()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0)
+        } else {
+            300
+        };
+        run_input_with_seconds(Path::new(&args[0]), Path::new(&args[1]), true, seconds)
     } else {
         run(Path::new(&args[0]), Path::new(&args[1]))
     } {

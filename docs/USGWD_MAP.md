@@ -27,6 +27,13 @@ Each state index invocation is bounded by two million source rows, 10,016
 16 GiB logical output and 300 seconds. Use an external watchdog for blocking
 local I/O. A failed candidate leaves the last-good index pointer. There is no
 network, scheduler, publication or source acquisition in these commands.
+Historical export alone accepts an optional final deadline argument, e.g.
+`well_index --usgwd manifest.json new-output 900`. The default stays 300 seconds;
+explicit values must be 1..900. Input verification, candidate processing and final
+writes share that same absolute invocation budget. Other modes remain at 300.
+Use a matching external watchdog and an explicit nonrenewable job reservation;
+this option does not renew an old attempt or authorize a retry. Record the chosen
+limit and measured runtime. Row, memory, artifact and output limits are unchanged.
 Historical rows share a bounded in-process cell buffer: flush thresholds are
 10,000 rows or 64 MiB serialized row data globally, and 500 rows or 4 MiB per
 cell. One bounded incoming row may cross a threshold before immediate flush.

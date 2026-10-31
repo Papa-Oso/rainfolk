@@ -19,9 +19,9 @@ fn hex(v: &Value) -> bool {
     v.as_str()
         .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
 }
-fn check_time(start: Instant) -> Result<(), String> {
-    if start.elapsed() >= Duration::from_secs(300) {
-        Err("historical index 300-second deadline".into())
+fn check_time(start: Instant, seconds: u64) -> Result<(), String> {
+    if start.elapsed() >= Duration::from_secs(seconds) {
+        Err(format!("historical index {seconds}-second deadline"))
     } else {
         Ok(())
     }
@@ -76,6 +76,12 @@ pub struct Input {
 }
 impl Input {
     pub fn open(path: &Path, started: Instant) -> Result<Self, String> {
+        Self::open_with_seconds(path, started, 300)
+    }
+    pub fn open_with_seconds(path: &Path, started: Instant, seconds: u64) -> Result<Self, String> {
+        if !(1..=900).contains(&seconds) {
+            return Err("historical deadline must be 1..900 seconds".into());
+        }
         let b = read(path, 1024 * 1024)?;
         let m = envelope(&b)?;
         if m["normalizationPolicy"] != POLICY
@@ -120,7 +126,7 @@ impl Input {
                     return Err("historical segment cap".into());
                 }
                 for (n, r) in segments.iter().enumerate() {
-                    check_time(started)?;
+                    check_time(started, seconds)?;
                     if r["directory"] != format!("segment-{n:02}")
                         || r["path"] != "usgwd-manifest.json"
                         || !hex(&r["sha256"])
@@ -157,7 +163,7 @@ impl Input {
                     .as_array()
                     .ok_or("historical index groups")?
                 {
-                    check_time(started)?;
+                    check_time(started, seconds)?;
                     let g = json(&artifact(&root, r, "usgwd-index-group")?)?;
                     indices.extend(
                         g["idIndex"]
@@ -186,7 +192,7 @@ impl Input {
         let mut last = String::new();
         let (mut occurrences, mut q, mut duplicates, mut mapped) = (0u64, 0u64, 0u64, 0u64);
         for r in indices {
-            check_time(started)?;
+            check_time(started, seconds)?;
             let index = json(&artifact(&root, &r, "usgwd-index")?)?;
             let ids = index["ids"].as_array().ok_or("historical index ids")?;
             if ids.len() > 200 {
@@ -356,6 +362,17 @@ pub fn pack(records: Vec<Value>, source: &Value, manifest_sha: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_input_deadline_remains_bounded() {
+        let started = Instant::now() - Duration::from_secs(301);
+        assert!(check_time(started, 300).is_err());
+        assert!(check_time(started, 900).is_ok());
+        for seconds in [0, 901, u64::MAX] {
+            assert!(
+                Input::open_with_seconds(Path::new("missing"), Instant::now(), seconds).is_err()
+            );
+        }
+    }
     #[test]
     fn regional_operations_are_explicit_bounded_and_preserve_axis_order() {
         let (x, y, o) = coordinate(-71.5, 43.2, "New Hampshire").unwrap();

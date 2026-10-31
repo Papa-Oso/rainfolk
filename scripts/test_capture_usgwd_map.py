@@ -36,6 +36,19 @@ class UsgwdMapTests(unittest.TestCase):
             result.append(json.loads(raw))
         return index, result
 
+    def test_explicit_deadline_changes_no_artifact_bytes_and_invalid_limits_write_nothing(self):
+        paths = self.source(); self.run_import(paths, allowance=None)
+        manifest = self.root/'output/usgwd-manifest.json'
+        default = self.index_run(manifest, self.root/'default-budget')
+        explicit = subprocess.run([str(INDEX), '--usgwd', str(manifest), str(self.root/'explicit-budget'), '900'], capture_output=True)
+        self.assertEqual(explicit.returncode, 0, explicit.stderr.decode())
+        self.assertEqual(json.loads(explicit.stdout)['indexSha256'], default['indexSha256'])
+        for value in ['0', '901', '-1', 'invalid', '18446744073709551616']:
+            out = self.root/('invalid-'+value)
+            failed = subprocess.run([str(INDEX), '--usgwd', str(manifest), str(out), value], capture_output=True)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertFalse(out.exists())
+
     def test_invalid_quantity_keeps_original_and_maps_without_fake_usgs_identity(self):
         paths = self.source([dict(self.rows[0], **{'Length of Screen (Feet)': '-5'})])
         self.run_import(paths, allowance=None)
