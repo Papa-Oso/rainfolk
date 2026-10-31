@@ -4,6 +4,12 @@ Upstream: https://github.com/bilawalsidhu/gods-eye-view . This is an independent
 project, not an official partnership. The existing local integration stays in its
 GEV checkout; this release candidate does not vendor the application or run it.
 
+Current delivery status: the GEV preview uses the published 36-state historical
+feed. The separately validated local 48-state candidate is not yet published.
+Full visual acceptance and user approval remain gates before upstream submission.
+See [current counts and limitations](../README.md#current-status). Older builder
+and browser attempts below are historical evidence, not the current coverage list.
+
 Recorded local upstream base: `9d3548c27c2cd4bf80ea39cbb3f0634ab1c5a06b`.
 Recorded builder HEAD: `a2c3a9766e251eb0311368cc77a1215d34221ec3`, plus uncommitted
 layer/collector changes. Neither is a claim about current upstream main. A

@@ -27,6 +27,13 @@ Each state index invocation is bounded by two million source rows, 10,016
 16 GiB logical output and 300 seconds. Use an external watchdog for blocking
 local I/O. A failed candidate leaves the last-good index pointer. There is no
 network, scheduler, publication or source acquisition in these commands.
+Historical export alone accepts an optional final deadline argument, e.g.
+`well_index --usgwd manifest.json new-output 900`. The default stays 300 seconds;
+explicit values must be 1..900. Input verification, candidate processing and final
+writes share that same absolute invocation budget. Other modes remain at 300.
+Use a matching external watchdog and an explicit nonrenewable job reservation;
+this option does not renew an old attempt or authorize a retry. Record the chosen
+limit and measured runtime. Row, memory, artifact and output limits are unchanged.
 Historical rows share a bounded in-process cell buffer: flush thresholds are
 10,000 rows or 64 MiB serialized row data globally, and 500 rows or 4 MiB per
 cell. One bounded incoming row may cross a threshold before immediate flush.
@@ -59,6 +66,12 @@ Dense historical half-degree cells are split by reading one hash-verified initia
 tile at a time (at most 500 rows / 8 MiB). Collection before recursive detail
 splitting is limited to 2,000 records. At maximum depth, coincident records are
 emitted in separate bounded packs rather than merged or loaded as one large cell.
+Subdivision coalesces each quadrant's incoming rows across source tiles before
+writing its next stage. Each of four buffers holds at most 500 rows and 4 MiB of
+serialized row data; a single larger row is flushed alone under the unchanged
+8 MiB artifact cap. This avoids hundreds of tiny, synced intermediate files for
+fragmented inputs. Headers must match; source IDs, coordinates and provenance are
+retained. Durable immutable writes and all existing resource guards still apply.
 This retains the existing 300-second and 16 GiB logical-output guards. A guarded
 failure leaves the prior published index unchanged; it never authorizes a retry
 or a larger budget by itself.
@@ -105,7 +118,9 @@ tampering and last-good preservation. Run the existing aggregate checks plus:
 node --test integrations/gev/historicalPack.test.mjs
 ```
 
-Actual state exports and browser evidence remain local/ignored. Public source
-review is separate from data publication, hosting capacity, merge and deployment.
+Real records and operational evidence remain outside Git. A 36-state historical
+feed is published separately; the validated local 48-state candidate still awaits
+publication approval. See [the current status](../README.md#current-status).
+Public source review is separate from data publication, hosting capacity, merge and deployment.
 EOF does not establish complete state coverage; missing records never mean no
 wells or plugged wells. Map information does not establish water safety or rights.

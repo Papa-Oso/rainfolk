@@ -10,17 +10,19 @@ fn hash(bytes: &[u8]) -> String {
 struct Budget {
     started: std::time::Instant,
     bytes: std::cell::Cell<u64>,
+    seconds: u64,
 }
 impl Budget {
     fn new() -> Self {
         Self {
             started: std::time::Instant::now(),
             bytes: std::cell::Cell::new(0),
+            seconds: 300,
         }
     }
     fn check(&self) -> Result<(), Box<dyn std::error::Error>> {
-        if self.started.elapsed().as_secs() >= 300 {
-            return Err("index 300-second deadline".into());
+        if self.started.elapsed().as_secs() >= self.seconds {
+            return Err(format!("index {}-second deadline", self.seconds).into());
         }
         Ok(())
     }
@@ -319,6 +321,35 @@ fn split_detail(
 // Historical rows have already passed global source-ID reconciliation. Split
 // dense groups by streaming existing bounded tiles before collecting detail rows.
 // This avoids a dense half-degree cell becoming an unbounded JSON tree in RAM.
+fn flush_historical_child(
+    out: &Path,
+    budget: &Budget,
+    base: &Value,
+    bounds: [f64; 4],
+    rows: &mut Vec<Value>,
+    children: &mut Vec<Value>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let count = rows.len();
+    if count > 500 {
+        return Err("historical stage row cap".into());
+    }
+    let mut pack = base.clone();
+    pack["records"] = json!(std::mem::take(rows));
+    let bytes = serde_json::to_vec(&pack)?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err("historical stage byte cap".into());
+    }
+    let digest = hash(&bytes);
+    let name = format!("{digest}.json");
+    write_immutable(out, budget, &name, &bytes)?;
+    children.push(
+        json!({"url":name,"sha256":digest,"bounds":bounds,"count":count,"bytes":bytes.len()}),
+    );
+    Ok(())
+}
 fn compact_historical_group(
     out: &Path,
     budget: &Budget,
@@ -375,6 +406,18 @@ fn compact_historical_group(
     let mx = (b[0] + b[2]) / 2.0;
     let my = (b[1] + b[3]) / 2.0;
     let mut children: [Vec<Value>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut buffers: [Vec<Value>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut buffered_bytes = [0usize; 4];
+    let mut base = Value::Null;
+    let mut row_byte_limit = 0usize;
+    let child_bounds: [[f64; 4]; 4] = std::array::from_fn(|i| {
+        [
+            if i % 2 == 0 { b[0] } else { mx },
+            if i / 2 == 0 { b[1] } else { my },
+            if i % 2 == 0 { mx } else { b[2] },
+            if i / 2 == 0 { my } else { b[3] },
+        ]
+    });
     let mut observed = 0u64;
     for tile in &tiles {
         let mut pack = read_detail_stage(out, budget, tile)?;
@@ -394,7 +437,16 @@ fn compact_historical_group(
             )?;
             continue;
         }
-        let mut buckets: [Vec<Value>; 4] = std::array::from_fn(|_| Vec::new());
+        if base.is_null() {
+            base = pack.clone();
+            let overhead = serde_json::to_vec(&base)?.len();
+            row_byte_limit = (8 * 1024 * 1024usize)
+                .checked_sub(overhead)
+                .ok_or("historical stage header cap")?
+                .min(4 * 1024 * 1024);
+        } else if pack != base {
+            return Err("historical stage header mismatch".into());
+        }
         for row in rows {
             let x = usize::from(
                 row["longitude"]
@@ -408,31 +460,48 @@ fn compact_historical_group(
                     .ok_or("historical stage latitude")?
                     >= my,
             );
-            buckets[y * 2 + x].push(row);
-        }
-        for (i, rows) in buckets.into_iter().enumerate() {
-            if rows.is_empty() {
-                continue;
+            let i = y * 2 + x;
+            let bytes = serde_json::to_vec(&row)?.len() + 1;
+            if !buffers[i].is_empty()
+                && (buffers[i].len() == 500 || buffered_bytes[i] + bytes > row_byte_limit)
+            {
+                flush_historical_child(
+                    out,
+                    budget,
+                    &base,
+                    child_bounds[i],
+                    &mut buffers[i],
+                    &mut children[i],
+                )?;
+                buffered_bytes[i] = 0;
             }
-            let bounds = [
-                if i % 2 == 0 { b[0] } else { mx },
-                if i / 2 == 0 { b[1] } else { my },
-                if i % 2 == 0 { mx } else { b[2] },
-                if i / 2 == 0 { my } else { b[3] },
-            ];
-            pack["records"] = json!(rows);
-            let bytes = serde_json::to_vec(&pack)?;
-            if bytes.len() > 8 * 1024 * 1024 {
-                return Err("historical stage byte cap".into());
+            buffered_bytes[i] += bytes;
+            buffers[i].push(row);
+            if buffers[i].len() == 500 || buffered_bytes[i] >= row_byte_limit {
+                flush_historical_child(
+                    out,
+                    budget,
+                    &base,
+                    child_bounds[i],
+                    &mut buffers[i],
+                    &mut children[i],
+                )?;
+                buffered_bytes[i] = 0;
             }
-            let digest = hash(&bytes);
-            let name = format!("{digest}.json");
-            write_immutable(out, budget, &name, &bytes)?;
-            children[i].push(json!({"url":name,"sha256":digest,"bounds":bounds,"count":rows.len(),"bytes":bytes.len()}));
         }
     }
     if observed != total {
         return Err("historical stage input conservation".into());
+    }
+    for i in 0..4 {
+        flush_historical_child(
+            out,
+            budget,
+            &base,
+            child_bounds[i],
+            &mut buffers[i],
+            &mut children[i],
+        )?;
     }
     for child in children {
         if child.is_empty() {
@@ -633,11 +702,25 @@ fn run_input(
     out: &Path,
     historical: bool,
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    let budget_owner = Budget::new();
+    run_input_with_seconds(input, out, historical, 300)
+}
+fn run_input_with_seconds(
+    input: &Path,
+    out: &Path,
+    historical: bool,
+    seconds: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    if !(1..=900).contains(&seconds) || (!historical && seconds != 300) {
+        return Err("historical deadline must be 1..900 seconds".into());
+    }
+    let mut budget_owner = Budget::new();
+    budget_owner.seconds = seconds;
     let budget = &budget_owner;
     let started = budget.started;
     let mut historical_input = if historical {
-        Some(gev_us_groundwater::usgwd_map::Input::open(input, started)?)
+        Some(gev_us_groundwater::usgwd_map::Input::open_with_seconds(
+            input, started, seconds,
+        )?)
     } else {
         None
     };
@@ -675,9 +758,7 @@ fn run_input(
                 candidates.len()
             );
         }
-        if started.elapsed().as_secs() >= 300 {
-            return Err("index 300-second deadline".into());
-        }
+        budget.check()?;
         let pack_value;
         let candidate;
         let pack = if let Some(h) = &mut historical_input {
@@ -1030,6 +1111,7 @@ mod tests {
         let expired = Budget {
             started: std::time::Instant::now() - std::time::Duration::from_secs(301),
             bytes: std::cell::Cell::new(0),
+            seconds: 300,
         };
         assert!(read_detail_stage(&dir, &expired, &reference).is_err());
         fs::write(dir.join(name), b"{}").unwrap();
@@ -1045,8 +1127,62 @@ mod tests {
         let expired = Budget {
             started: std::time::Instant::now() - std::time::Duration::from_secs(301),
             bytes: std::cell::Cell::new(0),
+            seconds: 300,
         };
         assert!(write_immutable(&dir, &expired, "expired.json", b"x").is_err());
+        assert!(!dir.join("expired.json").exists());
+    }
+    #[test]
+    fn historical_subdivision_coalesces_fragmented_stages_without_losing_ids() {
+        let dir = scratch("historical-fragmented");
+        let budget = Budget::new();
+        let mut old = Vec::new();
+        for batch in 0..210 {
+            let rows:Vec<_>=(0..10).map(|n|{let i=batch*10+n;json!({"id":format!("ROW-{i:05}"),"longitude":if i%2==0{0.1}else{0.4},"latitude":if i%4<2{0.1}else{0.4}})}).collect();
+            let pack = json!({"coverage":{"indexed":true},"acquisitions":[],"records":rows});
+            let bytes = serde_json::to_vec(&pack).unwrap();
+            let digest = hash(&bytes);
+            let name = format!("{digest}.json");
+            write_immutable(&dir, &budget, &name, &bytes).unwrap();
+            old.push(json!({"url":name,"sha256":digest,"bytes":bytes.len(),"count":10,"bounds":[0.0,0.0,0.5,0.5]}));
+        }
+        let pack = json!({"coverage":{"indexed":true},"acquisitions":[],"records":[{"id":"LARGE","longitude":0.1,"latitude":0.1,"payload":"x".repeat(5*1024*1024)}]});
+        let bytes = serde_json::to_vec(&pack).unwrap();
+        let digest = hash(&bytes);
+        let name = format!("{digest}.json");
+        write_immutable(&dir, &budget, &name, &bytes).unwrap();
+        old.push(json!({"url":name,"sha256":digest,"bytes":bytes.len(),"count":1,"bounds":[0.0,0.0,0.5,0.5]}));
+        let before = fs::read_dir(&dir).unwrap().count();
+        let result = compact_details(&dir, &budget, old.clone(), true).unwrap();
+        assert!(
+            fs::read_dir(&dir).unwrap().count() - before <= 40,
+            "fragmented input must not create one child artifact per input tile"
+        );
+        let mut ids = std::collections::BTreeSet::new();
+        for r in &result {
+            let bytes = fs::read(dir.join(r["url"].as_str().unwrap())).unwrap();
+            assert!(bytes.len() <= 8 * 1024 * 1024);
+            let p: Value = serde_json::from_slice(&bytes).unwrap();
+            for row in p["records"].as_array().unwrap() {
+                assert!(ids.insert(row["id"].as_str().unwrap().to_owned()));
+            }
+        }
+        assert_eq!(ids.len(), 2101);
+        assert!(ids.contains("LARGE"));
+        assert_eq!(result, compact_details(&dir, &budget, old, true).unwrap());
+    }
+    #[test]
+    fn explicit_historical_deadline_is_finite_and_applies_to_final_writes() {
+        let dir = scratch("explicit-deadline");
+        for seconds in [0, 901, u64::MAX] {
+            assert!(run_input_with_seconds(Path::new("missing"), &dir, true, seconds).is_err());
+        }
+        let mut budget = Budget::new();
+        budget.seconds = 900;
+        budget.started = std::time::Instant::now() - std::time::Duration::from_secs(301);
+        assert!(budget.check().is_ok());
+        budget.started = std::time::Instant::now() - std::time::Duration::from_secs(901);
+        assert!(write_immutable(&dir, &budget, "expired.json", b"x").is_err());
         assert!(!dir.join("expired.json").exists());
     }
     #[test]
@@ -1519,14 +1655,22 @@ fn main() {
     }
     let historical = args.first().is_some_and(|s| s == "--usgwd");
     let args = if historical { &args[1..] } else { &args[..] };
-    if args.len() != 2 {
+    if args.len() != 2 && !(historical && args.len() == 3) {
         eprintln!(
-            "usage: well_index [--usgwd] <pinned-batches.json | normalized-manifest.json> <output-directory>"
+            "usage: well_index [--usgwd] <pinned-batches.json | normalized-manifest.json> <output-directory> [historical-deadline-seconds:1..900]"
         );
         std::process::exit(1);
     }
     match if historical {
-        run_input(Path::new(&args[0]), Path::new(&args[1]), true)
+        let seconds = if args.len() == 3 {
+            args[2]
+                .to_str()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0)
+        } else {
+            300
+        };
+        run_input_with_seconds(Path::new(&args[0]), Path::new(&args[1]), true, seconds)
     } else {
         run(Path::new(&args[0]), Path::new(&args[1]))
     } {

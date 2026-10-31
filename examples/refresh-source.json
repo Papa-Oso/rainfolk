@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "resourceId": "8b02895f02c14dd1a749bcc5584a5c55",
+  "releaseSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "inputSha256": "b1604357f16b99ffd02dfa09faa4d9ca36fabbd2aeab231af46827711b477198",
+  "inputBytes": 713,
+  "state": "New Hampshire",
+  "sourceUrl": "https://www.hydroshare.org/resource/8b02895f02c14dd1a749bcc5584a5c55/data/contents/USGWD-Tabular/USGWD_New_Hampshire.csv",
+  "checkedAt": "2026-10-27T00:00:00Z",
+  "sourcePublishedAt": null,
+  "sourceFileModifiedAt": "2024-03-08T14:22:12",
+  "sourcePublishedTimeZone": null,
+  "license": "CC-BY-4.0",
+  "attribution": "Invented two-row fixture only; no downloaded records",
+  "schemaSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}

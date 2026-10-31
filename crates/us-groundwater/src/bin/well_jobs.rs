@@ -19,6 +19,8 @@ mod partitions;
 mod sdr_bulk;
 #[path = "../sdr_jobs.rs"]
 mod sdr_jobs;
+#[path = "../snapshot_diff.rs"]
+mod snapshot_diff;
 #[path = "../usgwd.rs"]
 mod usgwd;
 fn hash(bytes: &[u8]) -> String {
@@ -500,6 +502,19 @@ fn main() {
 }
 fn cli() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|s| s == "diff-usgwd") {
+        if args.len() != 5 {
+            return Err("usage: well-jobs diff-usgwd <previous-manifest|-> <current-manifest> <directory> <seconds:1..900>".into());
+        }
+        let result = snapshot_diff::run(
+            (args[1] != "-").then(|| Path::new(&args[1])),
+            Path::new(&args[2]),
+            Path::new(&args[3]),
+            args[4].parse().map_err(|_| "invalid diff deadline")?,
+        )?;
+        println!("{result}");
+        return Ok(());
+    }
     if args.first().is_some_and(|s| s == "import-usgwd-segmented") {
         if !(4..=6).contains(&args.len()) {
             return Err("usage: well-jobs import-usgwd-segmented <csv> <source.json> <directory> [rows-per-segment] [new-partitions]; one new segment per invocation".into());
