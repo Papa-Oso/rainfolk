@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GIB = 1024**3
 INPUT_CAP = 512*1024**2
 META_CAP = 16*1024**2
-POLICY = 'usgwd-local-refresh-v1'
+POLICY = 'usgwd-local-refresh-v2'
 ACTIVE_BUDGET = ContextVar('refresh-budget',default=None)
 
 
@@ -185,6 +185,13 @@ def invoke(args, job, jobfile, seconds):
     stderr = jobfile.parent/(prefix+'.stderr.log')
     peak = 0; start = time.monotonic(); category = None
     with stdout.open('wb') as out, stderr.open('wb') as err:
+        tool = 'index' if args[1] == '--usgwd' else 'jobs'
+        if sha(read(Path(args[0]),64*1024**2)) != job['toolchain'][tool]:
+            job['running']=False;job['failed']=True
+            job['lastChild']=dict(exitCode=None,category='toolchain drift before launch',attempt=job['attempts'],peakBytes=0,elapsedSeconds=time.monotonic()-start)
+            atomic(jobfile.parent/(prefix+'.json'),dict(job['lastChild'],command=args[1],launched=False))
+            save(jobfile,job)
+            raise ValueError('toolchain drift before launch; no child started')
         child = subprocess.Popen(args, stdout=out, stderr=err, close_fds=True)
         budget=ACTIVE_BUDGET.get()
         if budget is not None:budget.child=child
@@ -316,7 +323,9 @@ def _run(config_path, root, steps=32, resume=False, ack_stopped=False):
                 previous['localCheckedAt'] = datetime.now(timezone.utc).isoformat()
                 save(root/'refresh-state.json', state)
                 continue
-            directory = root/'runs'/item['key']/identity
+            baseline = previous['completion']['sha256'] if previous else None
+            transition = sha(encode([identity,baseline]))
+            directory = root/'runs'/item['key']/transition
             jobfile = directory/'job.json'
             binary = ROOT/'crates/us-groundwater/target/debug'/('well-jobs.exe' if os.name=='nt' else 'well-jobs')
             index_binary = binary.with_name('well_index.exe' if os.name=='nt' else 'well_index')
@@ -325,11 +334,13 @@ def _run(config_path, root, steps=32, resume=False, ack_stopped=False):
                 if shutil.disk_usage(root).free < 80*GIB:
                     raise ValueError('80GiB free reservation required for new state refresh')
                 directory.mkdir(parents=True)
-                job = dict(fingerprint=identity, policy=POLICY, toolchain=toolchain, configSha256=config_sha, receiptSha256=sha(receipt_bytes),
+                job = dict(fingerprint=identity, transition=transition, baselineCompletionSha256=baseline, policy=POLICY, toolchain=toolchain, configSha256=config_sha, receiptSha256=sha(receipt_bytes),
                            startedAt=time.time(), deadlineAt=invocation_deadline, attempts=0, stage='import', running=False,
                            previous=previous, scope=scope, phaseSeconds=900)
                 save(jobfile, job)
             job = checkpoint(jobfile, None)
+            if job.get('transition') != transition or job.get('baselineCompletionSha256') != baseline:
+                raise ValueError('refresh transition baseline mismatch')
             if job['configSha256'] != config_sha or job['receiptSha256'] != sha(receipt_bytes) or job.get('policy') != POLICY or job.get('toolchain') != toolchain:
                 raise ValueError('job config/receipt/toolchain changed; no budget reset')
             if job.get('running'):
@@ -390,7 +401,7 @@ def _run(config_path, root, steps=32, resume=False, ack_stopped=False):
                 job['failed'] = False; save(jobfile, job)
             if job['stage'] != 'complete':
                 return dict(status='paused', key=item['key'], stage=job['stage'], attempts=job['attempts'], deadlineAt=job['deadlineAt'])
-            completion = dict(schemaVersion=1,kind='rainfolk-refresh-candidate',fingerprint=identity,
+            completion = dict(schemaVersion=1,kind='rainfolk-refresh-candidate',fingerprint=identity,transition=transition,
                               manifest=job['manifest'],index=job['index'],diff=job['diff'],previous=job['previous'],
                               requiresReview=job['requiresReview'],activation='manual-only',remoteSourceChecked=False,
                               execution=dict(policy=POLICY,toolchain=job['toolchain'],configSha256=job['configSha256'],attempts=job['attempts'],startedAt=job['startedAt'],deadlineAt=job['deadlineAt']))

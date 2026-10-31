@@ -249,8 +249,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 10074,
-      "sha256": "95014da58d36c4885e30d207bd9a613f5db8bf2df002a160a1c9db904ca8dd80"
+      "bytes": 11570,
+      "sha256": "6af10139fbc9371045f04e924c9874064df56e1b53ee2456ab12b714d5d491a5"
     },
     {
       "path": "SECURITY.md",
@@ -364,8 +364,8 @@
     },
     {
       "path": "docs/GEV_INTEGRATION.md",
-      "bytes": 2388,
-      "sha256": "683dfe7740c101254ef7f1041b715b15440611e88e5b7f917466dd6214dea943"
+      "bytes": 2793,
+      "sha256": "380b6400ea7c8e78d77f322ec85f9d02b8bb5d1ffcc4e63c87cea56cc99c585d"
     },
     {
       "path": "docs/MIGRATION.md",
@@ -379,8 +379,8 @@
     },
     {
       "path": "docs/SNAPSHOT_REFRESH.md",
-      "bytes": 9083,
-      "sha256": "7d7dc6db3d3db4dbc4acb0acaef107b8c27e272eeeb4ea407a5f9620bfb95e56"
+      "bytes": 9630,
+      "sha256": "391cf9ac5aa851467e6be9ab563dcdada0b4d53ed2a281c7dc99ac54c32f7763"
     },
     {
       "path": "docs/TEXAS_SDR.md",
@@ -399,8 +399,8 @@
     },
     {
       "path": "docs/USGWD_MAP.md",
-      "bytes": 7754,
-      "sha256": "1212fd244a633ea0aa088f19031599e4ec1c1db82789d90352d50b5e6fdde51d"
+      "bytes": 7929,
+      "sha256": "6588023e8e3d4856c52d0f07af2a572091776b75a863d2e4ebc620363cbd42d2"
     },
     {
       "path": "docs/dependencies.json",
@@ -419,8 +419,8 @@
     },
     {
       "path": "examples/refresh-offline.json",
-      "bytes": 543,
-      "sha256": "1c1c1be29c7015d7de140bbdeec536bd063a4fd7ba7cdb90870bb5195113d1a3"
+      "bytes": 537,
+      "sha256": "11dc2e60243ca146d64f841eb1f9ee53c004be6b870ee8d3286caf126b4cf260"
     },
     {
       "path": "examples/refresh-source.json",
@@ -664,8 +664,8 @@
     },
     {
       "path": "scripts/refresh-wells.py",
-      "bytes": 21878,
-      "sha256": "c60b95dd66ffa13b1590f7bcf2c355debddd38dd00fad99f81cd05647d911020"
+      "bytes": 22837,
+      "sha256": "f91dd164232647c5a77a7026f9a6cbfe6613d2bc10f0ab38a0fa2d4c997b511b"
     },
     {
       "path": "scripts/test-usgs-key-path.ps1",
@@ -674,8 +674,8 @@
     },
     {
       "path": "scripts/test_capture_refresh.py",
-      "bytes": 14684,
-      "sha256": "8dfe115a7c360b59875195b764ed96ccd342d4eb402b2651f1781e8108d8d265"
+      "bytes": 17517,
+      "sha256": "12d12ce0240748fb0496437ef14441edae8fe9d9b6b86e9176f9af2d740a8073"
     },
     {
       "path": "scripts/test_capture_texas_sdr.py",

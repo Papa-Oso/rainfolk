@@ -118,7 +118,9 @@ tampering and last-good preservation. Run the existing aggregate checks plus:
 node --test integrations/gev/historicalPack.test.mjs
 ```
 
-Actual state exports and browser evidence remain local/ignored. Public source
-review is separate from data publication, hosting capacity, merge and deployment.
+Real records and operational evidence remain outside Git. A 36-state historical
+feed is published separately; the validated local 48-state candidate still awaits
+publication approval. See [the current status](../README.md#current-status).
+Public source review is separate from data publication, hosting capacity, merge and deployment.
 EOF does not establish complete state coverage; missing records never mean no
 wells or plugged wells. Map information does not establish water safety or rights.

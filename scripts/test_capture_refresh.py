@@ -103,6 +103,42 @@ class RefreshTests(unittest.TestCase):
         report=self.report();self.assertEqual(report['counts']['added'],2);self.assertEqual(report['counts']['missing'],2)
         self.assertTrue(report['requiresReview']);self.assertEqual(report['counts']['changed'],0)
 
+    def test_returning_snapshot_compares_current_baseline_and_preserves_chain(self):
+        self.source();a1=self.run_refresh()['candidate']
+        extra=dict(self.rows[0],**{'Well ID':'SYN_3'})
+        self.source(self.rows+[extra]);b1=self.run_refresh()['candidate']
+        self.source();a2=self.run_refresh()['candidate'];report=self.report()
+        self.assertNotEqual(a1['completion'],a2['completion'])
+        self.assertEqual(report['before']['manifestSha256'],b1['manifest']['sha256'])
+        self.assertEqual(report['counts']['missing'],1);self.assertTrue(report['requiresReview'])
+        complete=refresh.load(refresh.pinned(self.root/'refresh',a2['completion']))
+        self.assertEqual(complete['previous']['completion'],b1['completion'])
+        self.source(self.rows+[extra]);b2=self.run_refresh()['candidate']
+        self.assertNotEqual(b1['completion'],b2['completion'])
+        self.assertEqual(self.report()['before']['manifestSha256'],a2['manifest']['sha256'])
+        self.assertTrue(refresh.pinned(self.root/'refresh',a1['completion']).exists())
+
+    def test_executable_drift_between_stages_refuses_launch_and_keeps_last_candidate(self):
+        self.source();old=self.run_refresh()['candidate']
+        self.source(self.rows+[dict(self.rows[0],**{'Well ID':'SYN_3'})])
+        read=refresh.read;index_reads=0
+        index=fixtures.BINARY.with_name('well_index.exe' if __import__('os').name=='nt' else 'well_index')
+        def drift(path,cap=refresh.META_CAP):
+            nonlocal index_reads
+            if Path(path)==index:
+                index_reads+=1
+                if index_reads==2:return b'invented changed executable bytes'
+            return read(path,cap)
+        with mock.patch.object(refresh,'read',side_effect=drift):
+            with self.assertRaisesRegex(ValueError,'toolchain drift before launch'):
+                self.run_refresh()
+        self.assertEqual(self.state()['sources']['new-hampshire']['completion'],old['completion'])
+        job=refresh.checkpoint(self.job(),None)
+        self.assertFalse(job['running']);self.assertTrue(job['failed'])
+        self.assertFalse((self.job().parent/'map').exists())
+        self.assertEqual(job['lastChild']['category'],'toolchain drift before launch')
+        self.assertEqual(self.run_refresh(resume=True)['status'],'changed-state-candidate-ready')
+
     def test_conflicting_id_is_quarantine_transition_not_deletion(self):
         self.source();self.run_refresh()
         self.source(self.rows+[dict(self.rows[0],County='Invented conflict')]);self.run_refresh()
@@ -217,6 +253,14 @@ class RefreshTests(unittest.TestCase):
         code="import importlib.util,time; s=importlib.util.spec_from_file_location('r',"+repr(str(Path(refresh.__file__)))+"); m=importlib.util.module_from_spec(s);s.loader.exec_module(m);m.Lifetime(1);time.sleep(10)"
         result=subprocess.run([__import__('sys').executable,'-c',code],capture_output=True,timeout=5)
         self.assertEqual(result.returncode,124)
+
+    def test_old_transition_policy_cannot_silently_reset_pending_job(self):
+        self.source();self.run_refresh(steps=1);job=self.job();before=job.read_bytes()
+        path=self.root/'refresh/refresh-state.json';state=refresh.checkpoint(path,None)
+        state['policy']='usgwd-local-refresh-v1';refresh.save(path,state)
+        with self.assertRaisesRegex(ValueError,'refresh state owner'):
+            self.run_refresh()
+        self.assertEqual(job.read_bytes(),before)
 
 
 if __name__=='__main__':unittest.main()

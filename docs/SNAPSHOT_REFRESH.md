@@ -1,6 +1,6 @@
 # Snapshot refresh: implementation plan and boundary
 
-Base: `6bdf11a9c46517aaaab7f6a81b5adba72301cd31`. Owned work is one
+The implementation builds on the reviewed historical-map exporter. Owned work is one
 `well-jobs` diff command, one Python snapshot runner, synthetic tests/config,
 this contract and the producer source inventory. Existing data stays immutable.
 
@@ -41,9 +41,9 @@ After the normal offline build, these commands use only the two existing
 invented USGWD fixture rows:
 
 ```sh
-python -B scripts/refresh-wells.py examples/refresh-offline.json .temp-gev/refresh-example-final-v1 --plan
-python -B scripts/refresh-wells.py examples/refresh-offline.json .temp-gev/refresh-example-final-v1
-python -B scripts/refresh-wells.py examples/refresh-offline.json .temp-gev/refresh-example-final-v1
+python -B scripts/refresh-wells.py examples/refresh-offline.json .temp-gev/refresh-example-v2 --plan
+python -B scripts/refresh-wells.py examples/refresh-offline.json .temp-gev/refresh-example-v2
+python -B scripts/refresh-wells.py examples/refresh-offline.json .temp-gev/refresh-example-v2
 ```
 
 The second invocation creates a local review candidate; the third reports
@@ -92,6 +92,9 @@ or global federation root is changed by this command.
 candidates. Each immutable `complete.json` links its previous candidate and the
 normalized manifest, delta report and index. A missing/quarantined ID or changed
 release sets `requiresReview`; history and the previous export remain present.
+Each transition is keyed by both the incoming fingerprint and the previous
+completion hash. An A to B to A sequence therefore creates a new B-to-A comparison,
+including missing-record warnings, rather than reusing the original A job.
 Even a candidate without warnings has `activation=manual-only`. These references
 are review artifacts, not the public feed's active pointer. Switching a reviewed
 feed back to an older version remains possible because old versions are retained.
@@ -117,6 +120,10 @@ automatically retry them. A parent crash leaves a `running` marker: verify that
 the saved child has stopped before using `--ack-stopped`. Only a matching stale
 index lock can then be removed. Source bytes, config, receipt, policy and executable
 hashes are pinned; changing any during a pending job refuses continuation.
+Executable hashes are rechecked immediately before every child launch, so a
+between-stage rebuild cannot run under an earlier recorded hash. Protocol
+`usgwd-local-refresh-v2` refuses v1 state; retain older evidence and use a new
+reviewed state directory rather than editing its policy marker or resetting budgets.
 An expired allowance needs an explicitly reviewed new execution window; this
 command has no automatic deadline reset or amendment mechanism.
 

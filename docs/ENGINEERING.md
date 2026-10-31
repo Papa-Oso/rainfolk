@@ -42,6 +42,26 @@ Direct `scripts/check-release.py` at the mixed repository root will reject workf
 additions; use the wrapper here. A passing check supports source publication review;
 it does not authorize publication or certify live datasets.
 
+## Pinned CI actions
+
+The offline workflow uses Node24-native official action releases:
+
+| Action | Release | Pinned commit |
+| --- | --- | --- |
+| `actions/checkout` | [v7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1) | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `actions/setup-python` | [v7.1.0](https://github.com/actions/setup-python/releases/tag/v7.1.0) | `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0` |
+
+Their official release pages map to these full commit IDs and display GitHub's
+Verified signature (key ID `B5690EEEBB952194`). This records GitHub's verification,
+not a local GPG trust-store verification. The pinned
+[checkout manifest](https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/action.yml)
+and [Python manifest](https://github.com/actions/setup-python/blob/6d4fd22b20465ccc0f7354476588e8df7c9ca0e0/action.yml)
+both declare `node24`; the used inputs remain supported. Node24 actions require
+runner version 2.327.1 or later; this workflow uses GitHub-hosted Windows runners.
+Standard `pull_request`/`push` triggers, read-only repository permission and
+`persist-credentials: false` remain. No unsafe-PR opt-in, custom Python mirror or
+Node-runtime environment override is enabled. Final PR CI verifies compatibility.
+
 ## Work and evidence
 
 Use the task issue template. Record outcome, scope/owned paths, acceptance,
