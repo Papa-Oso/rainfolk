@@ -269,8 +269,8 @@
     },
     {
       "path": "crates/us-groundwater/src/bin/well_index.rs",
-      "bytes": 66517,
-      "sha256": "62922d04d831ca4bbff0e4189e6fcdb2ce84ef626ec401e2f724e436f9299c68"
+      "bytes": 70734,
+      "sha256": "724f1d1492966101ce9e32006ff9d5c9d33da331c4aa951658db3057f366e6bc"
     },
     {
       "path": "crates/us-groundwater/src/bin/well_jobs.rs",
@@ -389,8 +389,8 @@
     },
     {
       "path": "docs/USGWD_MAP.md",
-      "bytes": 7273,
-      "sha256": "efa28deff4e1ee235f98f213bab4d86bafaf7108f9884442b5a3b2c0c8d3547f"
+      "bytes": 7754,
+      "sha256": "1212fd244a633ea0aa088f19031599e4ec1c1db82789d90352d50b5e6fdde51d"
     },
     {
       "path": "docs/dependencies.json",

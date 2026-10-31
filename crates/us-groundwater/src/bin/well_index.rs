@@ -321,6 +321,35 @@ fn split_detail(
 // Historical rows have already passed global source-ID reconciliation. Split
 // dense groups by streaming existing bounded tiles before collecting detail rows.
 // This avoids a dense half-degree cell becoming an unbounded JSON tree in RAM.
+fn flush_historical_child(
+    out: &Path,
+    budget: &Budget,
+    base: &Value,
+    bounds: [f64; 4],
+    rows: &mut Vec<Value>,
+    children: &mut Vec<Value>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let count = rows.len();
+    if count > 500 {
+        return Err("historical stage row cap".into());
+    }
+    let mut pack = base.clone();
+    pack["records"] = json!(std::mem::take(rows));
+    let bytes = serde_json::to_vec(&pack)?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err("historical stage byte cap".into());
+    }
+    let digest = hash(&bytes);
+    let name = format!("{digest}.json");
+    write_immutable(out, budget, &name, &bytes)?;
+    children.push(
+        json!({"url":name,"sha256":digest,"bounds":bounds,"count":count,"bytes":bytes.len()}),
+    );
+    Ok(())
+}
 fn compact_historical_group(
     out: &Path,
     budget: &Budget,
@@ -377,6 +406,18 @@ fn compact_historical_group(
     let mx = (b[0] + b[2]) / 2.0;
     let my = (b[1] + b[3]) / 2.0;
     let mut children: [Vec<Value>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut buffers: [Vec<Value>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut buffered_bytes = [0usize; 4];
+    let mut base = Value::Null;
+    let mut row_byte_limit = 0usize;
+    let child_bounds: [[f64; 4]; 4] = std::array::from_fn(|i| {
+        [
+            if i % 2 == 0 { b[0] } else { mx },
+            if i / 2 == 0 { b[1] } else { my },
+            if i % 2 == 0 { mx } else { b[2] },
+            if i / 2 == 0 { my } else { b[3] },
+        ]
+    });
     let mut observed = 0u64;
     for tile in &tiles {
         let mut pack = read_detail_stage(out, budget, tile)?;
@@ -396,7 +437,16 @@ fn compact_historical_group(
             )?;
             continue;
         }
-        let mut buckets: [Vec<Value>; 4] = std::array::from_fn(|_| Vec::new());
+        if base.is_null() {
+            base = pack.clone();
+            let overhead = serde_json::to_vec(&base)?.len();
+            row_byte_limit = (8 * 1024 * 1024usize)
+                .checked_sub(overhead)
+                .ok_or("historical stage header cap")?
+                .min(4 * 1024 * 1024);
+        } else if pack != base {
+            return Err("historical stage header mismatch".into());
+        }
         for row in rows {
             let x = usize::from(
                 row["longitude"]
@@ -410,31 +460,48 @@ fn compact_historical_group(
                     .ok_or("historical stage latitude")?
                     >= my,
             );
-            buckets[y * 2 + x].push(row);
-        }
-        for (i, rows) in buckets.into_iter().enumerate() {
-            if rows.is_empty() {
-                continue;
+            let i = y * 2 + x;
+            let bytes = serde_json::to_vec(&row)?.len() + 1;
+            if !buffers[i].is_empty()
+                && (buffers[i].len() == 500 || buffered_bytes[i] + bytes > row_byte_limit)
+            {
+                flush_historical_child(
+                    out,
+                    budget,
+                    &base,
+                    child_bounds[i],
+                    &mut buffers[i],
+                    &mut children[i],
+                )?;
+                buffered_bytes[i] = 0;
             }
-            let bounds = [
-                if i % 2 == 0 { b[0] } else { mx },
-                if i / 2 == 0 { b[1] } else { my },
-                if i % 2 == 0 { mx } else { b[2] },
-                if i / 2 == 0 { my } else { b[3] },
-            ];
-            pack["records"] = json!(rows);
-            let bytes = serde_json::to_vec(&pack)?;
-            if bytes.len() > 8 * 1024 * 1024 {
-                return Err("historical stage byte cap".into());
+            buffered_bytes[i] += bytes;
+            buffers[i].push(row);
+            if buffers[i].len() == 500 || buffered_bytes[i] >= row_byte_limit {
+                flush_historical_child(
+                    out,
+                    budget,
+                    &base,
+                    child_bounds[i],
+                    &mut buffers[i],
+                    &mut children[i],
+                )?;
+                buffered_bytes[i] = 0;
             }
-            let digest = hash(&bytes);
-            let name = format!("{digest}.json");
-            write_immutable(out, budget, &name, &bytes)?;
-            children[i].push(json!({"url":name,"sha256":digest,"bounds":bounds,"count":rows.len(),"bytes":bytes.len()}));
         }
     }
     if observed != total {
         return Err("historical stage input conservation".into());
+    }
+    for i in 0..4 {
+        flush_historical_child(
+            out,
+            budget,
+            &base,
+            child_bounds[i],
+            &mut buffers[i],
+            &mut children[i],
+        )?;
     }
     for child in children {
         if child.is_empty() {
@@ -1064,6 +1131,45 @@ mod tests {
         };
         assert!(write_immutable(&dir, &expired, "expired.json", b"x").is_err());
         assert!(!dir.join("expired.json").exists());
+    }
+    #[test]
+    fn historical_subdivision_coalesces_fragmented_stages_without_losing_ids() {
+        let dir = scratch("historical-fragmented");
+        let budget = Budget::new();
+        let mut old = Vec::new();
+        for batch in 0..210 {
+            let rows:Vec<_>=(0..10).map(|n|{let i=batch*10+n;json!({"id":format!("ROW-{i:05}"),"longitude":if i%2==0{0.1}else{0.4},"latitude":if i%4<2{0.1}else{0.4}})}).collect();
+            let pack = json!({"coverage":{"indexed":true},"acquisitions":[],"records":rows});
+            let bytes = serde_json::to_vec(&pack).unwrap();
+            let digest = hash(&bytes);
+            let name = format!("{digest}.json");
+            write_immutable(&dir, &budget, &name, &bytes).unwrap();
+            old.push(json!({"url":name,"sha256":digest,"bytes":bytes.len(),"count":10,"bounds":[0.0,0.0,0.5,0.5]}));
+        }
+        let pack = json!({"coverage":{"indexed":true},"acquisitions":[],"records":[{"id":"LARGE","longitude":0.1,"latitude":0.1,"payload":"x".repeat(5*1024*1024)}]});
+        let bytes = serde_json::to_vec(&pack).unwrap();
+        let digest = hash(&bytes);
+        let name = format!("{digest}.json");
+        write_immutable(&dir, &budget, &name, &bytes).unwrap();
+        old.push(json!({"url":name,"sha256":digest,"bytes":bytes.len(),"count":1,"bounds":[0.0,0.0,0.5,0.5]}));
+        let before = fs::read_dir(&dir).unwrap().count();
+        let result = compact_details(&dir, &budget, old.clone(), true).unwrap();
+        assert!(
+            fs::read_dir(&dir).unwrap().count() - before <= 40,
+            "fragmented input must not create one child artifact per input tile"
+        );
+        let mut ids = std::collections::BTreeSet::new();
+        for r in &result {
+            let bytes = fs::read(dir.join(r["url"].as_str().unwrap())).unwrap();
+            assert!(bytes.len() <= 8 * 1024 * 1024);
+            let p: Value = serde_json::from_slice(&bytes).unwrap();
+            for row in p["records"].as_array().unwrap() {
+                assert!(ids.insert(row["id"].as_str().unwrap().to_owned()));
+            }
+        }
+        assert_eq!(ids.len(), 2101);
+        assert!(ids.contains("LARGE"));
+        assert_eq!(result, compact_details(&dir, &budget, old, true).unwrap());
     }
     #[test]
     fn explicit_historical_deadline_is_finite_and_applies_to_final_writes() {

@@ -66,6 +66,12 @@ Dense historical half-degree cells are split by reading one hash-verified initia
 tile at a time (at most 500 rows / 8 MiB). Collection before recursive detail
 splitting is limited to 2,000 records. At maximum depth, coincident records are
 emitted in separate bounded packs rather than merged or loaded as one large cell.
+Subdivision coalesces each quadrant's incoming rows across source tiles before
+writing its next stage. Each of four buffers holds at most 500 rows and 4 MiB of
+serialized row data; a single larger row is flushed alone under the unchanged
+8 MiB artifact cap. This avoids hundreds of tiny, synced intermediate files for
+fragmented inputs. Headers must match; source IDs, coordinates and provenance are
+retained. Durable immutable writes and all existing resource guards still apply.
 This retains the existing 300-second and 16 GiB logical-output guards. A guarded
 failure leaves the prior published index unchanged; it never authorizes a retry
 or a larger budget by itself.
