@@ -174,7 +174,9 @@ detect change; a highest sequential ID cannot detect historical corrections.
 Checkpoint each diff against a pinned prior snapshot, preserve old versions and
 record added/changed/missing IDs. Missing records never imply plugged wells.
 Sources without a reliable changefeed need periodic complete reconciliation.
-No scheduler or state refresh implementation is included in this milestone.
+The [local snapshot refresh path](SNAPSHOT_REFRESH.md) now implements checksum
+detection, complete-snapshot diffs, state export reuse and a resumable inactive
+scheduler entry point. It does not fetch remote updates or activate a schedule.
 
 Rhode Island's baseline is an incomplete digitized sample collected September 6,
 2022. A successful read of that CSV does not establish all current Rhode Island

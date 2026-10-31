@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "profile": "usgwd-local-snapshot",
+  "runSeconds": 7200,
+  "sources": [
+    {
+      "key": "synthetic-new-hampshire",
+      "csv": "../fixtures/usgwd/synthetic.csv",
+      "receipt": "refresh-source.json"
+    }
+  ],
+  "schedule": {
+    "enabled": false,
+    "entryPoint": [
+      "python",
+      "-B",
+      "scripts/refresh-wells.py",
+      "examples/refresh-offline.json",
+      ".temp-gev/refresh-example-final-v1"
+    ],
+    "suggestedCadence": "daily for this single-source offline example; not activated"
+  }
+}
