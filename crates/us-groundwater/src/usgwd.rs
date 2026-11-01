@@ -266,7 +266,7 @@ fn source(path: &Path) -> Result<Value, String> {
 }
 fn source_with_cap(path: &Path, input_cap: u64) -> Result<Value, String> {
     let s = gev_us_groundwater::texas_sdr::decode_capture_json(&read_capped(path, MAX_BYTES)?)?;
-    let state = s["state"]
+    let _state = s["state"]
         .as_str()
         .filter(|s| {
             !s.is_empty()
@@ -274,11 +274,7 @@ fn source_with_cap(path: &Path, input_cap: u64) -> Result<Value, String> {
                 && s.bytes().all(|b| b.is_ascii_alphabetic() || b == b' ')
         })
         .ok_or("invalid state")?;
-    let expected = format!(
-        "https://www.hydroshare.org/resource/{RESOURCE}/data/contents/USGWD-Tabular/USGWD_{}.csv",
-        state.replace(' ', "_")
-    );
-    let allowed = [
+    let mut allowed = vec![
         "schemaVersion",
         "resourceId",
         "releaseSha256",
@@ -294,11 +290,13 @@ fn source_with_cap(path: &Path, input_cap: u64) -> Result<Value, String> {
         "attribution",
         "schemaSha256",
     ];
+    if s.get("derivation").is_some() {
+        allowed.push("derivation");
+    }
     if s.as_object().is_none_or(|o| {
         o.len() != allowed.len() || o.keys().any(|k| !allowed.contains(&k.as_str()))
-    }) || s["schemaVersion"] != 1
+    }) || !gev_us_groundwater::usgwd_map::source_url_valid(&s)
         || s["resourceId"] != RESOURCE
-        || s["sourceUrl"] != expected
         || s["license"] != "CC-BY-4.0"
         || !hex(&s["releaseSha256"])
         || !hex(&s["inputSha256"])

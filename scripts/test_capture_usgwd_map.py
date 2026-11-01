@@ -36,6 +36,13 @@ class UsgwdMapTests(unittest.TestCase):
             result.append(json.loads(raw))
         return index, result
 
+    def test_dbf_export_preserves_published_archive_and_derived_identity(self):
+        paths=self.source();s=json.loads(paths[1].read_bytes());s.update(schemaVersion=2,sourceUrl=f'https://www.hydroshare.org/resource/{fixtures.RESOURCE}/data/contents/USGWD-Geospatial/USGWD_New_Hampshire.zip',derivation=dict(policy='usgwd-dbf-attributes-v1',archiveSha256='c'*64,archiveMd5='d'*32,member='USGWD_New Hampshire.dbf',memberSha256='e'*64,sourceCrs='EPSG:4269',recordCount=len(self.rows)))
+        paths[1].write_text(json.dumps(s));self.run_import(paths,allowance=None);out=self.root/'dbf-map';self.index_run(self.root/'output/usgwd-manifest.json',out)
+        _,packs=self.packs(out)
+        for pack in packs:
+            a=pack['acquisitions'][0];self.assertEqual(a['derivation'],s['derivation']);self.assertEqual(a['inputSha256'],s['inputSha256']);self.assertEqual(a['url'],s['sourceUrl'])
+
     def test_explicit_deadline_changes_no_artifact_bytes_and_invalid_limits_write_nothing(self):
         paths = self.source(); self.run_import(paths, allowance=None)
         manifest = self.root/'output/usgwd-manifest.json'

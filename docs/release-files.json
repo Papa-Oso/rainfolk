@@ -329,13 +329,13 @@
     },
     {
       "path": "crates/us-groundwater/src/usgwd.rs",
-      "bytes": 29867,
-      "sha256": "1c67812a12618105fc1eb65681a7d59c18fb62930f9ca79ad81d98f85c245c7f"
+      "bytes": 29782,
+      "sha256": "0f66d2d40b1bce1109f6adb1e33db141691c5ce9c9ef376af027d884afa93c37"
     },
     {
       "path": "crates/us-groundwater/src/usgwd_map.rs",
-      "bytes": 17457,
-      "sha256": "b63bb845d9bf70e879131fb91a5484cc25cc6be1ceda80af1e8ec61d870b667c"
+      "bytes": 19131,
+      "sha256": "3d6060ffbea2525d9b5b2036024678c6b5a7bbe18723f255f995335df0cb24a0"
     },
     {
       "path": "crates/us-groundwater/src/usgwd_segments.rs",
@@ -401,6 +401,11 @@
       "path": "docs/USGWD_MAP.md",
       "bytes": 7929,
       "sha256": "6588023e8e3d4856c52d0f07af2a572091776b75a863d2e4ebc620363cbd42d2"
+    },
+    {
+      "path": "docs/USGWD_MISSING_STATES.md",
+      "bytes": 3423,
+      "sha256": "047a7a5541d6996ca504364297ff72af35e6c2a2f16524922cda0a63c35fa749"
     },
     {
       "path": "docs/dependencies.json",
@@ -694,18 +699,28 @@
     },
     {
       "path": "scripts/test_capture_usgwd.py",
-      "bytes": 21316,
-      "sha256": "950a7aa2841f09abd0bb28968cd4cc1a0b82f028daa9933002c5810c720dd60f"
+      "bytes": 22040,
+      "sha256": "a8038821f31b9b912db6137105fb8845ac256274c750e221d09894628d7463a8"
+    },
+    {
+      "path": "scripts/test_capture_usgwd_dbf.py",
+      "bytes": 2538,
+      "sha256": "bf365af7fbb583be47e17130fb0077c813601dca5ebe9fdb239da9e9291c3ff6"
     },
     {
       "path": "scripts/test_capture_usgwd_map.py",
-      "bytes": 12614,
-      "sha256": "3669e5fe62e5ef832f711d88bde09e6f57b4e1b82eadc7df1bebdd8e0b2d3d4b"
+      "bytes": 13505,
+      "sha256": "d1dffc2f074f51aa1fb27eadf2e3ddfb571037435d89d8c9703891cda0c66067"
     },
     {
       "path": "scripts/usgs-key.ps1",
       "bytes": 2468,
       "sha256": "3e4f1428a398072ea91c61d978c5acce7f860f07537c257acd6f8be0156a7a5a"
+    },
+    {
+      "path": "scripts/usgwd-dbf.py",
+      "bytes": 5523,
+      "sha256": "3286b8a361309a8f1c696b1231c4b3f80ac7e5538bffb4bb56ba2b6af4262d82"
     },
     {
       "path": "scripts/verify-usgs-key.py",

@@ -19,6 +19,45 @@ fn hex(v: &Value) -> bool {
     v.as_str()
         .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
 }
+/// Receipt provenance is an operator assertion, as with the original CSV profile.
+/// Derived DBF inputs retain the actual published ZIP URL and member identity.
+pub fn source_url_valid(source: &Value) -> bool {
+    let state = source["state"].as_str().unwrap_or("").replace(' ', "_");
+    let base = format!("https://www.hydroshare.org/resource/{RESOURCE}/data/contents/");
+    match source.get("derivation") {
+        None => {
+            source["schemaVersion"] == 1
+                && source["sourceUrl"] == format!("{base}USGWD-Tabular/USGWD_{state}.csv")
+        }
+        Some(d) => {
+            let fields = [
+                "policy",
+                "archiveSha256",
+                "archiveMd5",
+                "member",
+                "memberSha256",
+                "sourceCrs",
+                "recordCount",
+            ];
+            source["schemaVersion"] == 2
+                && source["sourceUrl"] == format!("{base}USGWD-Geospatial/USGWD_{state}.zip")
+                && d.as_object().is_some_and(|o| {
+                    o.len() == fields.len() && o.keys().all(|k| fields.contains(&k.as_str()))
+                })
+                && d["policy"] == "usgwd-dbf-attributes-v1"
+                && d["sourceCrs"] == "EPSG:4269"
+                && d["member"] == format!("USGWD_{}.dbf", source["state"].as_str().unwrap_or(""))
+                && hex(&d["archiveSha256"])
+                && hex(&d["memberSha256"])
+                && d["archiveMd5"]
+                    .as_str()
+                    .is_some_and(|s| s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+                && d["recordCount"]
+                    .as_u64()
+                    .is_some_and(|n| n > 0 && n <= MAX_ROWS)
+        }
+    }
+}
 fn check_time(start: Instant, seconds: u64) -> Result<(), String> {
     if start.elapsed() >= Duration::from_secs(seconds) {
         Err(format!("historical index {seconds}-second deadline"))
@@ -97,11 +136,7 @@ impl Input {
             || !hex(&source["releaseSha256"])
             || !hex(&source["inputSha256"])
             || crate::time_precision(source["checkedAt"].as_str().unwrap_or("")) != Some("instant")
-            || source["sourceUrl"]
-                != format!(
-                    "https://www.hydroshare.org/resource/{RESOURCE}/data/contents/USGWD-Tabular/USGWD_{}.csv",
-                    source["state"].as_str().unwrap_or("").replace(' ', "_")
-                )
+            || !source_url_valid(&source)
         {
             return Err("historical source contract".into());
         }
@@ -356,7 +391,11 @@ pub fn record(r: &Value, source: &Value) -> Result<Option<Value>, String> {
     ))
 }
 pub fn pack(records: Vec<Value>, source: &Value, manifest_sha: &str) -> Value {
-    json!({"schemaVersion":1,"kind":"gev-us-groundwater-wells","mode":"snapshot","coverage":{"country":"US","complete":false,"description":"Historical USGWD source records, not a count of distinct physical wells. Locations unverified; no water-level observations or current activity/water-safety assessment."},"acquisitions":[{"collection":"usgwd-historical-baseline","url":source["sourceUrl"],"retrievedAt":source["checkedAt"],"releaseSha256":source["releaseSha256"],"inputSha256":source["inputSha256"],"normalizationManifestSha256":manifest_sha,"license":source["license"],"attribution":source["attribution"]}],"records":records})
+    let mut value = json!({"schemaVersion":1,"kind":"gev-us-groundwater-wells","mode":"snapshot","coverage":{"country":"US","complete":false,"description":"Historical USGWD source records, not a count of distinct physical wells. Locations unverified; no water-level observations or current activity/water-safety assessment."},"acquisitions":[{"collection":"usgwd-historical-baseline","url":source["sourceUrl"],"retrievedAt":source["checkedAt"],"releaseSha256":source["releaseSha256"],"inputSha256":source["inputSha256"],"normalizationManifestSha256":manifest_sha,"license":source["license"],"attribution":source["attribution"]}],"records":records});
+    if let Some(derivation) = source.get("derivation") {
+        value["acquisitions"][0]["derivation"] = derivation.clone();
+    }
+    value
 }
 
 #[cfg(test)]
