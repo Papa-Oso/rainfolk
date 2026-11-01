@@ -329,18 +329,18 @@
     },
     {
       "path": "crates/us-groundwater/src/usgwd.rs",
-      "bytes": 29782,
-      "sha256": "0f66d2d40b1bce1109f6adb1e33db141691c5ce9c9ef376af027d884afa93c37"
+      "bytes": 29957,
+      "sha256": "6065bd7b34322961118077e58621b0d60b0a86b41b96c6537bdc8703cc230ac0"
     },
     {
       "path": "crates/us-groundwater/src/usgwd_map.rs",
-      "bytes": 19131,
-      "sha256": "3d6060ffbea2525d9b5b2036024678c6b5a7bbe18723f255f995335df0cb24a0"
+      "bytes": 19602,
+      "sha256": "fb0dcd52dc7798beb49305a13afdf147a5187cb1598913f842046eabfc633b8f"
     },
     {
       "path": "crates/us-groundwater/src/usgwd_segments.rs",
-      "bytes": 16195,
-      "sha256": "3df38e0920b2ba9521411c0332eaae2f30f485da89f41bfc35d1d6308271d365"
+      "bytes": 16363,
+      "sha256": "3543a67e3360bafbbacae9fc48b58c788ebd1d723909584f928317660ed1860c"
     },
     {
       "path": "crates/us-groundwater/src/well_index_merge.rs",
@@ -699,8 +699,8 @@
     },
     {
       "path": "scripts/test_capture_usgwd.py",
-      "bytes": 22040,
-      "sha256": "a8038821f31b9b912db6137105fb8845ac256274c750e221d09894628d7463a8"
+      "bytes": 23040,
+      "sha256": "bb6e8eb4f1db3f835a573ba824a2335e62756b70485244fb45e38d56045ee8d2"
     },
     {
       "path": "scripts/test_capture_usgwd_dbf.py",
@@ -709,8 +709,8 @@
     },
     {
       "path": "scripts/test_capture_usgwd_map.py",
-      "bytes": 13505,
-      "sha256": "d1dffc2f074f51aa1fb27eadf2e3ddfb571037435d89d8c9703891cda0c66067"
+      "bytes": 14470,
+      "sha256": "58cd6e3529bdf4e14434f68ed788481afb101e46c4b25a35eebccac68845e60a"
     },
     {
       "path": "scripts/usgs-key.ps1",

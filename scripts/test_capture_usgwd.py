@@ -54,6 +54,14 @@ class UsgwdTests(unittest.TestCase):
         paths=self.source();source=json.loads(paths[1].read_bytes());source.update(schemaVersion=2,sourceUrl=f'https://www.hydroshare.org/resource/{RESOURCE}/data/contents/USGWD-Geospatial/USGWD_New_Hampshire.zip',derivation=dict(policy='usgwd-dbf-attributes-v1',archiveSha256='c'*64,archiveMd5='d'*32,member='USGWD_New Hampshire.dbf',memberSha256='e'*64,sourceCrs='EPSG:4269',recordCount=len(self.rows)))
         paths[1].write_text(json.dumps(source));self.run_import(paths);self.assertEqual(self.payload()['source'],source)
         source['derivation']['sourceCrs']='EPSG:4326';paths[1].write_text(json.dumps(source));self.run_import(paths,'bad',okay=False)
+    def test_derived_count_matches_full_snapshot_and_not_segment_size(self):
+        for declared in [200,201,202]:
+            rows=[dict(self.rows[0],**{'Well ID':f'DBF_{i}'})for i in range(201)];paths=self.source(rows);s=json.loads(paths[1].read_bytes());s.update(schemaVersion=2,sourceUrl=f'https://www.hydroshare.org/resource/{RESOURCE}/data/contents/USGWD-Geospatial/USGWD_New_Hampshire.zip',derivation=dict(policy='usgwd-dbf-attributes-v1',archiveSha256='c'*64,archiveMd5='d'*32,member='USGWD_New Hampshire.dbf',memberSha256='e'*64,sourceCrs='EPSG:4269',recordCount=declared));paths[1].write_text(json.dumps(s))
+            self.run_import(paths,f'full-{declared}',allowance=None,okay=declared==201)
+            first=self.segment(paths,f'slices-{declared}');self.assertFalse(first['snapshotFullyRead'])
+            self.segment(paths,f'slices-{declared}',okay=declared==201)
+            self.assertEqual((self.root/f'slices-{declared}/usgwd-segmented-manifest.json').exists(),declared==201)
+
     def test_segment_boundaries_reconcile_duplicates_conflicts_and_resume_exactly(self):
         rows=[dict(self.rows[0],**{'Well ID':f'SEG_{i}'}) for i in range(201)]
         rows += [rows[0],dict(rows[1],County='Invented conflict'),dict(rows[2],**{'Year Reported':'invalid'})]

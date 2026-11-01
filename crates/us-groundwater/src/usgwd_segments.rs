@@ -397,6 +397,9 @@ pub(crate) fn run(
         checkpoint["segments"] = json!(refs);
         save_bounded(&cp, &mut checkpoint, CHECKPOINT_CAP, started)?;
     }
+    if eof && !gev_us_groundwater::usgwd_map::derived_rows_match(&src, row_offset as u64) {
+        return Err("USGWD derived source row count mismatch".into());
+    }
     let accounting = if eof {
         reconcile(dir, &refs, &manifests, &src, started)?
     } else {

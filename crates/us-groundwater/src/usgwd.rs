@@ -588,6 +588,9 @@ fn ingest_source(
     if refs.len() < old.len() || (refs.len() == old.len() && prior["inputRows"] != count) {
         return Err("checkpoint source-row mismatch".into());
     }
+    if slice.is_none() && !gev_us_groundwater::usgwd_map::derived_rows_match(&src, count as u64) {
+        return Err("USGWD derived source row count mismatch".into());
+    }
     let mut indices = Vec::new();
     let mut chunk = Vec::new();
     for (id, (digest, n, mapped)) in &reports.ids {

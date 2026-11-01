@@ -58,6 +58,10 @@ pub fn source_url_valid(source: &Value) -> bool {
         }
     }
 }
+/// Declared DBF cardinality describes the whole derived snapshot, not a slice.
+pub fn derived_rows_match(source: &Value, rows: u64) -> bool {
+    source.get("derivation").is_none() || source["derivation"]["recordCount"].as_u64() == Some(rows)
+}
 fn check_time(start: Instant, seconds: u64) -> Result<(), String> {
     if start.elapsed() >= Duration::from_secs(seconds) {
         Err(format!("historical index {seconds}-second deadline"))
@@ -139,6 +143,12 @@ impl Input {
             || !source_url_valid(&source)
         {
             return Err("historical source contract".into());
+        }
+        if !derived_rows_match(
+            &source,
+            m["accounting"]["inputRows"].as_u64().unwrap_or(u64::MAX),
+        ) {
+            return Err("historical derived source row count mismatch".into());
         }
         let root = path
             .parent()

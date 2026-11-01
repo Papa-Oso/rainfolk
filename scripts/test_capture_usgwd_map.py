@@ -43,6 +43,10 @@ class UsgwdMapTests(unittest.TestCase):
         for pack in packs:
             a=pack['acquisitions'][0];self.assertEqual(a['derivation'],s['derivation']);self.assertEqual(a['inputSha256'],s['inputSha256']);self.assertEqual(a['url'],s['sourceUrl'])
 
+    def test_map_refuses_resigned_derived_cardinality_mismatch(self):
+        paths=self.source();s=json.loads(paths[1].read_bytes());s.update(schemaVersion=2,sourceUrl=f'https://www.hydroshare.org/resource/{fixtures.RESOURCE}/data/contents/USGWD-Geospatial/USGWD_New_Hampshire.zip',derivation=dict(policy='usgwd-dbf-attributes-v1',archiveSha256='c'*64,archiveMd5='d'*32,member='USGWD_New Hampshire.dbf',memberSha256='e'*64,sourceCrs='EPSG:4269',recordCount=len(self.rows)));paths[1].write_text(json.dumps(s));self.run_import(paths,allowance=None)
+        manifest=self.root/'output/usgwd-manifest.json';e=json.loads(manifest.read_bytes());e['payload']['source']['derivation']['recordCount']=1;e['sha256']=hashlib.sha256(json.dumps(e['payload'],sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest();manifest.write_text(json.dumps(e));r=self.index_run(manifest,self.root/'bad-count',okay=False);self.assertIn(b'row count mismatch',r.stderr)
+
     def test_explicit_deadline_changes_no_artifact_bytes_and_invalid_limits_write_nothing(self):
         paths = self.source(); self.run_import(paths, allowance=None)
         manifest = self.root/'output/usgwd-manifest.json'
