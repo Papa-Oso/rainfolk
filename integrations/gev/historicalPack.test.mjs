@@ -42,3 +42,17 @@ test('numeric native ID refuses before renderer string operations', () => {
   p.records[0].id=`USGWD-${'a'.repeat(64)}-123`;p.records[0].metadata.id=p.records[0].id;
   assert.throws(()=>validateHistoricalWellPack(p));
 });
+
+function derivedFixture() {
+  const p=fixture(), a=p.acquisitions[0];a.url=a.url.replace('USGWD-Tabular','USGWD-Geospatial').replace('.csv','.zip');p.records[0].metadataSourceUrl=a.url;
+  a.derivation={policy:'usgwd-dbf-attributes-v1',archiveSha256:'e'.repeat(64),archiveMd5:'f'.repeat(32),member:'USGWD_New Hampshire.dbf',memberSha256:'a'.repeat(64),sourceCrs:'EPSG:4269',recordCount:1};return p;
+}
+test('verified DBF derivation survives strict historical admission',()=>{
+  const p=derivedFixture();assert.equal(validateHistoricalWellPack(p),p);
+});
+test('ZIP artifacts cannot hide missing or contradictory derivation evidence',()=>{
+  for(const mutate of [p=>delete p.acquisitions[0].derivation,p=>p.acquisitions[0].derivation=null,p=>p.acquisitions[0].derivation.sourceCrs='EPSG:4326',p=>p.acquisitions[0].derivation.member='../source.dbf',p=>p.acquisitions[0].derivation.archiveSha256='wrong',p=>p.acquisitions[0].derivation.archiveMd5=['f'.repeat(32)],p=>p.acquisitions[0].derivation.recordCount=0,p=>p.acquisitions[0].derivation.recordCount=2000001,p=>p.acquisitions[0].derivation.extra=true,p=>p.records[0].metadata.provenance.sourceRow=3,p=>p.acquisitions[0].url+='?token=not-used']){
+    const p=derivedFixture();mutate(p);assert.throws(()=>validateHistoricalWellPack(p));
+  }
+  const p=fixture();p.acquisitions[0].derivation=derivedFixture().acquisitions[0].derivation;assert.throws(()=>validateHistoricalWellPack(p));
+});

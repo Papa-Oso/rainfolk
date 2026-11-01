@@ -27,13 +27,22 @@ export function displayCoordinate(longitude, latitude, state) {
   return { longitude: Math.atan2(y, x) * 180 / Math.PI, latitude: phi * 180 / Math.PI, code, translation, accuracy };
 }
 
+// A ZIP URL is admissible only with explicit, closed derivation evidence.
+function sourceArtifact(a) {
+  const d = a.derivation;
+  if (!Object.hasOwn(a, 'derivation')) return new RegExp(`^https://www\\.hydroshare\\.org/resource/${resource}/data/contents/USGWD-Tabular/USGWD_[A-Za-z_]+\\.csv$`).test(a.url);
+  const match = new RegExp(`^https://www\\.hydroshare\\.org/resource/${resource}/data/contents/USGWD-Geospatial/USGWD_([A-Za-z_]+)\\.zip$`).exec(a.url);
+  const keys = ['policy', 'archiveSha256', 'archiveMd5', 'member', 'memberSha256', 'sourceCrs', 'recordCount'];
+  return !!match && d && typeof d === 'object' && Object.keys(d).length === keys.length && keys.every(k => Object.hasOwn(d, k)) && d.policy === 'usgwd-dbf-attributes-v1' && d.sourceCrs === 'EPSG:4269' && hex(d.archiveSha256) && hex(d.memberSha256) && typeof d.archiveMd5 === 'string' && /^[a-f0-9]{32}$/.test(d.archiveMd5) && d.member === `USGWD_${match[1].replaceAll('_', ' ')}.dbf` && Number.isSafeInteger(d.recordCount) && d.recordCount > 0 && d.recordCount <= 2000000;
+}
+
 /** Every source has its own closed validator; mixed packs never bypass USGS admission. */
 export function validateHistoricalWellPack(pack, validateUsgs) {
   if (pack?.schemaVersion !== 1 || pack.kind !== 'gev-us-groundwater-wells' || pack.mode !== 'snapshot' || pack.coverage?.country !== 'US' || pack.coverage.complete !== false || !Array.isArray(pack.records) || pack.records.length > 2000 || !Array.isArray(pack.acquisitions) || pack.acquisitions.length < 1 || pack.acquisitions.length > (pack.coverage.indexed ? 256 : 12)) refuse();
   const source = [], legacy = [];
   for (const a of pack.acquisitions) {
     if (a?.collection !== 'usgwd-historical-baseline') { legacy.push(a); continue; }
-    if (typeof a.url !== 'string' || !new RegExp(`^https://www\\.hydroshare\\.org/resource/${resource}/data/contents/USGWD-Tabular/USGWD_[A-Za-z_]+\\.csv$`).test(a.url) || !zoned(a.retrievedAt) || !hex(a.releaseSha256) || !hex(a.inputSha256) || !hex(a.normalizationManifestSha256) || a.license !== 'CC-BY-4.0' || typeof a.attribution !== 'string' || !a.attribution || a.attribution.length > 4096) refuse();
+    if (typeof a.url !== 'string' || !sourceArtifact(a) || !zoned(a.retrievedAt) || !hex(a.releaseSha256) || !hex(a.inputSha256) || !hex(a.normalizationManifestSha256) || a.license !== 'CC-BY-4.0' || typeof a.attribution !== 'string' || !a.attribution || a.attribution.length > 4096) refuse();
     source.push(a);
   }
   if (!source.length) refuse();
@@ -47,7 +56,7 @@ export function validateHistoricalWellPack(pack, validateUsgs) {
     if (!projected || !Number.isFinite(site.longitude) || !Number.isFinite(site.latitude) || Math.abs(projected.longitude - site.longitude) > 1e-9 || Math.abs(projected.latitude - site.latitude) > 1e-9 || operation?.operation !== projected.code || operation.sourceCrs !== 'EPSG:4269' || operation.targetCrs !== 'EPSG:4326' || operation.method !== 'EPSG:9603' || JSON.stringify(operation.translationMetres) !== JSON.stringify(projected.translation) || operation.operationAccuracyMetres !== projected.accuracy || operation.intermediateHeightMetres !== 0 || operation.outputHeight !== null || operation.epoch !== null) refuse();
     const flags = m.locationFlags;
     if (!flags || !['Yes', 'No', 'Unknown'].includes(flags['Location Verified']?.trim()) || !['Flag County', 'Flag State', 'Flag US'].every(k => ['0', '1', '2'].includes(flags[k]?.trim())) || !['0', '1', '2', '3'].includes(flags['Flag Duplicate']?.trim()) || flags['Flag State'].trim() === '1' || flags['Flag US'].trim() === '1') refuse();
-    if (!hex(m.provenance?.inputSha256) || !hex(m.normalizedContentSha256) || !Number.isSafeInteger(m.provenance.sourceRow) || m.provenance.sourceRow < 2 || m.provenance.sourceRow > 2000001 || m.provenance.releaseSha256 !== m.releaseSha256 || !source.some(a => a.url === site.metadataSourceUrl && a.retrievedAt === site.metadataRetrievedAt && a.releaseSha256 === m.releaseSha256 && a.inputSha256 === m.provenance.inputSha256 && a.url.endsWith(`/USGWD_${m.sourceState.replaceAll(' ', '_')}.csv`))) refuse();
+    if (!hex(m.provenance?.inputSha256) || !hex(m.normalizedContentSha256) || !Number.isSafeInteger(m.provenance.sourceRow) || m.provenance.sourceRow < 2 || m.provenance.sourceRow > 2000001 || m.provenance.releaseSha256 !== m.releaseSha256 || !source.some(a => a.url === site.metadataSourceUrl && a.retrievedAt === site.metadataRetrievedAt && a.releaseSha256 === m.releaseSha256 && a.inputSha256 === m.provenance.inputSha256 && a.url.endsWith(`/USGWD_${m.sourceState.replaceAll(' ', '_')}.${a.derivation ? 'zip' : 'csv'}`) && (!a.derivation || m.provenance.sourceRow <= a.derivation.recordCount + 1))) refuse();
     if (!Array.isArray(m.quantityErrors) || m.quantityErrors.length > 5) refuse();
     for (const [key, unit] of [['Well Depth (Feet)', 'ft'], ['Screen Depth (Feet)', 'ft'], ['Length of Screen (Feet)', 'ft'], ['Well Capacity (GPM)', 'gal/min'], ['Surface Elevation (Feet)', 'ft']]) {
       const q = m.quantities?.[key];
