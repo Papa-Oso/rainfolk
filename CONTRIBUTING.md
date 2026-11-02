@@ -1,7 +1,8 @@
 # Contributing
 
-This local candidate is awaiting release review. Start with a small source lead
-or a reproducible validation defect. Public-source evidence remains pending until
+Start with a small source lead or a reproducible validation defect. Source review
+and data-publication decisions are separate; see the current README status.
+Public-source evidence remains pending until
 reviewed; research does not automatically publish questions, private locations or
 conversation history. Show exact proposed records/method changes before opt-in.
 

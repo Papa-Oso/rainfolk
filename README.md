@@ -1,198 +1,138 @@
 # Rainfolk
 
-Rainfolk prepares public well records for map layers, with source attribution,
-quality warnings and a traceable processing history. The current priority is a
-nationwide well-data feed for the independent God's Eye View application.
+Rainfolk is a personal project Josh Koelker works on in his spare time to make
+public water information easier to find, understand and use. It is an educational
+effort, not a registered nonprofit.
+
+Wells are the first practical focus. Rainfolk prepares public well records for
+map layers while keeping their sources, dates, gaps and quality warnings visible.
+Broader water education and mapping are future work.
 
 ## Current status
 
-The repository contains the Rust importer/indexer, bounded Python tools,
-synthetic examples and a [GEV integration kit](integrations/gev/README.md).
-It does not bundle the full GEV application or real source datasets. Website
-development is separate from this data/layer work.
+Status as of November 2, 2026:
 
-Verified historical USGWD status, October 31, 2026:
+| Work | What is available |
+| --- | --- |
+| Public well-data feed | An immutable 48-state historical USGWD release: 13,980,064 catalog records, 12,171,830 mapped and 1,808,234 unmapped. |
+| Local 50-state candidate | Validated locally: 14,260,581 catalog records, 12,452,285 mapped and 1,808,296 unmapped. It is not published; preview review and a new publication decision remain. |
+| This repository | Rust validation/indexing, bounded Python tools, sample and synthetic fixtures, and a source-only God's Eye View integration kit. Full source datasets are not bundled. |
+| Water atlas | Separate private development, not a released application in this repository. |
+| God's Eye View contribution | Local integration and review work for an independent project. It has not been submitted upstream; no partnership or acceptance is implied. |
 
-| Release | States | Catalog records | Mapped records | Unmapped records |
-| --- | ---: | ---: | ---: | ---: |
-| Validated local candidate; not published | 48 | 13,980,064 | 12,171,830 | 1,808,234 |
-| Currently published version | 36 | 7,072,581 | 5,918,051 | 1,154,530 |
+The local candidate adds checksum-verified Nebraska data and a separately
+checksum-verified South Carolina geospatial source. South Carolina's CSV still
+fails its advertised checksum; its 171 additional unverified records remain
+excluded. The reviewed preparation code is on
+[`feature/usgwd-missing-states`](https://github.com/Papa-Oso/rainfolk/tree/feature/usgwd-missing-states),
+not yet merged into `main`. State presence does not mean complete state coverage.
 
-The [published 36-state feed](https://data.rainfolk.org/usgwd/f7e59fb0a049b3a1990cc0fd6862190b8cc6aeb370989fd41ac0300b9ee6d336/index.json)
-is an immutable version. The local 48-state candidate closes its state-export
-gaps, including Texas, but still needs publication approval. Nebraska's publisher
-file is not ready, and South Carolina's download failed checksum verification;
-neither is included in the 48 collected states.
+## Use the public feed
 
-These are historical source records, not a count of distinct physical wells or
-a current census. The [USGWD contract](docs/USGWD.md) preserves release-scoped IDs,
-original NAD83 coordinates, source dates and quality flags. The
-[map bridge](docs/USGWD_MAP.md) records the display-coordinate operation, retains
-invalid measurements as warnings and keeps records without usable locations in
-catalog accounting. Approximate/unverified locations are not surveyed wellheads.
+The current [48-state index](https://data.rainfolk.org/usgwd/8fa0f2843ef51c51f07da74644f9f5a2cf56c45563dc12f48dfaaca5e6aa6fe2/index.json)
+is a data entry point, not a standalone map page. The
+[GEV integration kit](integrations/gev/README.md) describes how a compatible
+consumer connects to it. The consumer reads broad count grids and loads bounded
+local detail as the map moves; it does not fetch every record at startup.
 
-The GEV preview is under review. Full visual acceptance and approval are required
-before submitting the integration upstream; no upstream PR is implied by local
-data or source tests. Existing standalone GEV installations remain separate.
+This is a pinned public release. Clients do not automatically discover or select
+new releases. A new release needs an explicit client configuration change and
+rebuild of the configured consumer, followed by review. The local 50-state
+candidate is not a replacement URL to use in a public client yet.
 
-## Current local pipeline
+These are historical source records, not verified distinct physical wells or a
+current census of active wells. Construction depth is not groundwater level.
+Approximate or unverified locations are not surveyed wellheads, and the records
+do not establish water safety, groundwater availability or drilling suitability.
+Unmapped records remain part of catalog accounting rather than disappearing from
+the totals. See the [USGWD contract](docs/USGWD.md) and
+[map bridge](docs/USGWD_MAP.md).
 
-The local implementation uses Rust with deterministic transport scripts. Its current pipeline is:
+The separate October 25, 2026 USGS inventory has 1,042,777 monitoring-location IDs
+and remains unchanged. Its pagination status is source-retrieval progress, not
+complete well coverage. That inventory collected location metadata, not
+water-level time series. It is not silently merged with USGWD or deduplicated by
+proximity.
 
-**collect -> validate -> spatial index -> God's Eye View layer**
+## Run an offline example
 
-Collection, validation and indexing are deterministic; there are no AI calls per
-well record. AI may assist development or source research.
+For contributors, the local pipeline is **collect -> validate -> spatial index ->
+map consumer**. Processing is deterministic; there are no AI calls per well record.
+The browser consumer needs no Rust runtime or source API key.
 
-Rainfolk is intended to be useful without depending on a founder-operated service. Exportable data, source attribution, and provenance are part of that goal. Data views should make gaps and source, retrieval, and measurement times explicit.
+You need Rust/Cargo supporting edition 2024 and Python 3. The recorded tested
+Rust/Cargo version is 1.99.1; no older minimum version is claimed. Windows builds
+also need the MSVC linker and SDK. Python transport uses the standard library.
+Node is needed for GEV checks, not these collector examples.
 
-The tested [local refresh path](docs/SNAPSHOT_REFRESH.md) detects changed CSV
-snapshots by hash, resumes imports, compares source IDs and exports only changed
-states while reusing other state indexes. Missing records are flagged for review,
-never interpreted as plugged wells. This is complete-snapshot comparison, not
-incremental fetching from agency changefeeds. Remote acquisition profiles and
-schedule activation remain to be completed; the executable scheduler entry point
-is inactive and does not install a service or publish a feed.
-
-## Coverage and limits
-
-The separate USGS inventory snapshot, dated **October 25, 2026**, remains unchanged:
-
-- **1,042,777** distinct USGS monitoring-location IDs
-- **44** jurisdictions with pagination complete for this source
-- **7** jurisdictions with pagination partial for this source
-- **9** quarantined records
-
-This USGS inventory is location metadata. No water-level time-series observations were fetched in this collection. Pagination complete describes retrieval progress for this source; it does not mean all wells or relevant records have been found.
-
-Rainfolk is not a complete registry of private wells. Its information does not establish groundwater availability, drilling suitability, or whether water is potable. Consult original sources and qualified local authorities for decisions that require current or site-specific information.
-
-## Contributing source leads and quality fixes
-
-Useful contributions include links to public water-information sources and corrections to source metadata, coverage, or retrieval results. Please include the source URL, the agency or publisher, the area covered, and the date you checked it.
-
-Do not submit private well-owner details, credentials, or other sensitive information.
-
-## Security and licensing
-
-Some live USGS requests require credentials. Offline examples and the static GEV
-feed do not. Keys and other secrets must never be committed or placed in browser code.
-
-Newly authored Rainfolk code and documentation are MIT licensed, copyright 2026 Joshua Koelker; see LICENSE. Third-party code and source data retain their separate terms and notices. This license does not cover datasets or unrelated third-party material. Third-party terms and notices are preserved.
-
-## Roadmap
-
-- Publish the validated 48-state feed after approval and finish GEV visual review.
-- Prepare the scoped upstream layer contribution after the user's review.
-- Add verified official-state acquisition profiles and activate refresh scheduling only after approval.
-- Keep source attribution, historical dates, uncertain locations and coverage gaps visible.
-
-## Links
-
-- [USGS monitoring-location API documentation](https://api.waterdata.usgs.gov/docs/ogcapi/) - current source documentation.
-- [God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) - independent upstream project; no official partnership is implied.
-- [Terlingua Water Atlas](https://github.com/Papa-Oso/terlingua-water-atlas) - historical research and catalog snapshot, not Rainfolk's current codebase or a rebranded version of this project.
-
-## Run the offline example
-
-Tested toolchain: rustc 1.99.1 and Cargo 1.99.1 on Windows; no older MSRV or other platform is claimed tested. Prerequisites: a Rust toolchain supporting edition 2024, Cargo and Python 3. Windows also
-requires the MSVC linker/SDK initialized in a Developer PowerShell. Python uses
-only its standard library; no Node, database, account or API key is needed for
-the collector examples. The full checks also use Node for the GEV contracts.
-The locked dependencies must already be cached for offline
-Cargo commands; first-time dependency retrieval is a separate normal crates.io
-operation:
+From the repository root, fetch the locked dependencies once if they are not
+already cached. This contacts crates.io, not a well-data source:
 
 ```sh
 cargo fetch --locked --manifest-path crates/us-groundwater/Cargo.toml
 ```
 
-That first-time command needs ordinary official crates.io access; it does not request source data. It was not run during this cached/offline verification.
-
-Run from the checkout root:
+Then build and run the local examples:
 
 ```sh
 cargo build --offline --locked --manifest-path crates/us-groundwater/Cargo.toml --bins
-cargo test --offline --locked --manifest-path crates/us-groundwater/Cargo.toml
-cargo fmt --manifest-path crates/us-groundwater/Cargo.toml -- --check
-python -B -m unittest discover -s scripts -p 'test_capture*.py'
-node --test integrations/gev/historicalPack.test.mjs integrations/gev/dataBase.test.mjs
 python -B examples/offline.py
 python -B examples/texas_sdr_offline.py
-python -B scripts/refresh-wells.py examples/refresh-offline.json .temp-gev/refresh-example-v2 --plan
 python -B scripts/check-workflow.py
 ```
 
-The example produces six indexed USGS IDs, verifies identical rebuilds and
-rejects a tampered candidate without replacing the last-good index. Output is
-kept under ignored `.temp-gev/`. It does not access the network or a credential.
-The synthetic SDR example retains four invented reports, including one nonspatial
-record, and verifies deterministic hashes and replay. The aggregate workflow
-checker verifies the producer release inventory and separate workflow files.
-Real SDR records and diagnostics are excluded from the source release.
+The first example verifies six sample USGS IDs, repeatable hashes, tamper rejection
+and last-good retention. The SDR example verifies four invented construction
+reports, including one nonspatial record. Examples use ignored `.temp-gev/`
+outputs and make no live data requests. Binaries are not installed into `PATH`;
+see [engineering setup and full checks](docs/ENGINEERING.md) for tool paths,
+verification and contributor workflow. Build and run from this checkout: the
+current runner embeds checkout paths for transport and fixtures and is not yet
+relocatable. Real collection needs a separately scoped
+source configuration and finite resource limits; examples are not live jobs.
 
-## Run and resume a fixture queue
+## Sources, licensing and refresh
 
-After the debug build, use `crates/us-groundwater/target/debug/well-jobs` (append
-`.exe` on Windows):
+The historical compilation is the **U.S. Groundwater Well Database (USGWD)** by
+Chung-Yi Lin, Alexandra Miller, Musab Waqar and Landon T. Marston, published on
+[HydroShare](https://doi.org/10.4211/hs.8b02895f02c14dd1a749bcc5584a5c55) under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Retain the publisher's
+citation, source credits, licence and supplied notices, and describe modifications.
+Rainfolk keeps original source identities and quality evidence, flags invalid
+measurements without guessing corrections, and records display-coordinate
+transformations separately from original coordinates.
 
-```sh
-well-jobs run fixtures/us-groundwater/jobs-v2/queue-offline.json .temp-gev/example-queue
-well-jobs resume fixtures/us-groundwater/jobs-v2/queue-offline.json .temp-gev/example-queue
-well-jobs resume fixtures/us-groundwater/jobs-v2/queue-offline.json .temp-gev/example-queue
-well-jobs status fixtures/us-groundwater/jobs-v2/queue-offline.json .temp-gev/example-queue
-```
+Rainfolk's newly authored software and documentation use the [MIT licence](LICENSE).
+That software licence does not relicense datasets or third-party material.
+[Source terms](DATA_SOURCES.md), [component notices](docs/RIGHTS.md) and the
+publisher's supplied agency notices remain relevant. A compilation licence is
+not a blanket guarantee about every underlying right or about anonymity.
 
-Replace `well-jobs` above with that executable path; it is not installed into
-PATH automatically. This synthetic example accumulates 2, 4 and 5 records. Only
-exhausted source pagination is completed. These are test records, not inventory.
-Build and run from this checkout: the current binary embeds its build-time
-repository path for the transport and fixtures, so it is not relocatable yet.
+The [local snapshot-refresh tools](docs/SNAPSHOT_REFRESH.md) detect changed input
+files, resume processing and compare source IDs. They do not provide automatic
+agency acquisition, scheduled live updates or public release discovery. A changed
+landing-page date is not evidence of fresh well records. The baseline and future
+official-source updates need separate provenance and conservative reconciliation.
 
-## Explicit live access and budgets
+Texas [SDR construction-report adapters](docs/TEXAS_SDR.md), including the
+[official bulk format](docs/TEXAS_SDR_BULK.md), are separate from the USGWD feed.
+They do not automatically add records to the map totals.
 
-No live queue or national corpus is included. Do not turn a fixture queue into a
-live national run by editing one flag. A reviewed adapter config must explicitly
-set scope, source filters/projection, finite request/row/byte/disk/time budgets,
-absolute expiry and polite pacing. Saved opaque cursors must remain unchanged.
-The runner retains hashes, source IDs, quarantines, cumulative accounting and
-last-good candidates, and stops on access/quota/validation failures. Budget
-exhaustion means partial coverage. It never auto-renews a window or publishes.
+## Help or support Rainfolk
 
-On Windows, masked local entry is `powershell -NoProfile -File scripts/usgs-key.ps1
--Action Set`. DPAPI protects the key outside Git for that user/computer. The
-helper's `Run` action expects the debug `well-jobs.exe`; `Status` checks presence
-only and `Verify` makes one explicit one-row official request. No live action is
-part of the offline quick start. On other platforms use a trusted secret manager
-to supply process-local `USGS_API_KEY`; protected portable storage is not yet
-implemented. Keys travel only in `X-Api-Key`, never URLs or logs.
+Useful contributions include authoritative public source leads, reproducible
+quality reports, documentation and testing. Include the publisher, source URL,
+area covered and date checked. Keep credentials and private or sensitive material
+out of issues and commits. Read [CONTRIBUTING](CONTRIBUTING.md) and
+[SECURITY](SECURITY.md) before submitting work.
 
-## Architecture, migration and contribution
+If you would like to support this personal educational project, voluntary support
+is available through [Support Rainfolk on Ko-fi](https://ko-fi.com/rainfolk1).
 
-Rust owns validation, queue accounting, source-ID reconciliation and spatial
-indexing. Python owns bounded standard-library HTTPS transport. Versioned artifacts
-are the boundary with the independent JavaScript/Cesium GEV layer. The browser
-needs no Rust runtime or Rainfolk service. See [artifact contracts](docs/ARTIFACT_CONTRACT.md),
-[GEV integration status](docs/GEV_INTEGRATION.md), [migration gates](docs/MIGRATION.md),
-[contribution preflight](CONTRIBUTING.md), [security](SECURITY.md), and
-[component rights](docs/RIGHTS.md).
+The next practical steps are to review the local 50-state layer, decide its
+publication separately, and finish the scoped GEV contribution before expanding
+ongoing source refresh work.
 
-The local national collection is evidence of progress, not a bundled download
-or complete physical-well census. Research prompts default to local research;
-only explicit opt-in may hand off selected public evidence for review. No shared
-ingestion endpoint, paid product or founder-operated service is required.
-The Terlingua repository is historical research, not a runtime dependency or the
-current Rainfolk implementation. Website work, hosting changes and any legacy
-retirement require their own decisions; none follows from an offline test.
-
-## Texas SDR source adapters
-
-The Rust crate supports bounded API captures of up to 200 submitted driller
-reports per page and the [official pipe-delimited bulk export](docs/TEXAS_SDR_BULK.md).
-Both retain provenance, source IDs and quarantine evidence. The API date-omission
-workaround, unknown location flags and field policy are documented in the
-[source contract](docs/TEXAS_SDR.md). The transport defaults to a zero-request dry run.
-
-SDR construction records are separate from USGWD; they are not silently added to
-its map totals or counted as additional distinct wells. Datum uncertainty remains
-explicit. Construction reports do not verify active wells, ownership or water safety.
+- [God's Eye View](https://github.com/bilawalsidhu/gods-eye-view): independent upstream application.
+- [GEV integration status](docs/GEV_INTEGRATION.md): boundaries and review gates.
+- [Terlingua Water Atlas](https://github.com/Papa-Oso/terlingua-water-atlas): historical research, not Rainfolk's runtime dependency or current application.

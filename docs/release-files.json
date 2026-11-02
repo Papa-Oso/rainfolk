@@ -14,13 +14,13 @@
     },
     {
       "path": "CONTRIBUTING.md",
-      "bytes": 1218,
-      "sha256": "3542459cb80d9c30ce2538d1ab57fad4096d6772f59144b05d642c7870117540"
+      "bytes": 1259,
+      "sha256": "99f520152f2763d6557d546c0058487de638da6c5f8a59ad794c0bfaad844438"
     },
     {
       "path": "DATA_SOURCES.md",
-      "bytes": 2642,
-      "sha256": "035e2990701fbbf60eef608a4c76906ef0af34a477f6386fd8a250fe28006607"
+      "bytes": 4124,
+      "sha256": "d65f26184e21aec9351f487b853b49e9378809d0a66e26e11a19eaf9441bd4da"
     },
     {
       "path": "LICENSE",
@@ -249,8 +249,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 11570,
-      "sha256": "6af10139fbc9371045f04e924c9874064df56e1b53ee2456ab12b714d5d491a5"
+      "bytes": 7785,
+      "sha256": "2e7f5e3d0f5be74c216d4aa30d4a7b8350256989ce95f112417a04e82a26755e"
     },
     {
       "path": "SECURITY.md",
@@ -359,13 +359,13 @@
     },
     {
       "path": "docs/GEV_DATA_HOSTING.md",
-      "bytes": 7583,
-      "sha256": "cfccb97bf4f9d0c5e12e9b985bfe7ab11e4462298cc2a901f7eeee34b95f82c6"
+      "bytes": 7999,
+      "sha256": "01e4458c941704173c757b9e6bdd8c6950a673e41986c26af3820428e46205ed"
     },
     {
       "path": "docs/GEV_INTEGRATION.md",
-      "bytes": 2793,
-      "sha256": "380b6400ea7c8e78d77f322ec85f9d02b8bb5d1ffcc4e63c87cea56cc99c585d"
+      "bytes": 2806,
+      "sha256": "19bb85ba270cf6619d6513e28eea8df60bc5fc5b0f4006fb82d18b55bb58c3f0"
     },
     {
       "path": "docs/MIGRATION.md",
@@ -399,8 +399,8 @@
     },
     {
       "path": "docs/USGWD_MAP.md",
-      "bytes": 7929,
-      "sha256": "6588023e8e3d4856c52d0f07af2a572091776b75a863d2e4ebc620363cbd42d2"
+      "bytes": 8084,
+      "sha256": "cab48131037db45539ca04c0f4e174903cb118a159bb79c1c6b97a90dfc44487"
     },
     {
       "path": "docs/dependencies.json",

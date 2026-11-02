@@ -60,7 +60,9 @@ accounting are separate. `distinctPhysicalWells` remains null. The map counts
 mapped source records, not unique physical wells or current active wells. The
 USGS corpus is unchanged and is not silently merged with USGWD. Ambiguous state
 IDs remain aliases with unresolved source-system/physical identity. Nebraska and
-South Carolina remain acquisition blockers independent of other states.
+South Carolina were held in the original 48-state run; the separate local
+50-state candidate resolves state presence using verified source files. See
+[current delivery status](../README.md#current-status).
 
 Dense historical half-degree cells are split by reading one hash-verified initial
 tile at a time (at most 500 rows / 8 MiB). Collection before recursive detail
@@ -118,9 +120,9 @@ tampering and last-good preservation. Run the existing aggregate checks plus:
 node --test integrations/gev/historicalPack.test.mjs
 ```
 
-Real records and operational evidence remain outside Git. A 36-state historical
-feed is published separately; the validated local 48-state candidate still awaits
-publication approval. See [the current status](../README.md#current-status).
+Real records and operational evidence remain outside Git. A 48-state historical
+feed is published separately; the validated local 50-state candidate still awaits
+preview review and a publication decision. See [the current status](../README.md#current-status).
 Public source review is separate from data publication, hosting capacity, merge and deployment.
 EOF does not establish complete state coverage; missing records never mean no
 wells or plugged wells. Map information does not establish water safety or rights.

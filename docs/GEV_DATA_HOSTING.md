@@ -1,4 +1,10 @@
-# Proposed GEV historical data feed
+# GEV data hosting: original preparation plan
+
+This document records the earlier 36-state hosting plan and its original scope,
+not current upload authority. The public feed now contains 48 states; the local
+50-state candidate is not published. See [current status](../README.md#current-status).
+Do not reuse an earlier release's approval or budgets for a new version. The
+placeholders and proposed account steps below are historical preparation notes.
 
 Source preparation only. No bucket, domain, billing, upload or public data release
 is activated by this document or the consumer patch. Account prerequisites are a
