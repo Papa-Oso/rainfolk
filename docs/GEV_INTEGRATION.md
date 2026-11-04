@@ -6,8 +6,10 @@ GEV checkout; this release candidate does not vendor the application or run it.
 
 Current delivery status: the published historical feed contains 48 states. A
 validated local 50-state candidate is separate and has not been published. The
-GEV contribution has not been submitted upstream; preview review and user
-approval remain gates. See [current counts and limitations](../README.md#current-status).
+[GEV contribution PR #1508](https://github.com/bilawalsidhu/gods-eye-view/pull/1508)
+is open and not merged. Maintainer CI authorization/review and disclosed
+verification gaps remain. Local 50-state preview/publication decisions are
+separate. See [current counts and limitations](../README.md#current-status).
 Older builder and browser attempts below are historical evidence, not the current
 coverage list.
 

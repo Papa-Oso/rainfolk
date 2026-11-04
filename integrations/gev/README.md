@@ -1,5 +1,10 @@
 # Existing GEV consumer: historical-source extension
 
+This kit reproduces an earlier pinned consumer. The current full-application
+contribution is [GEV PR #1508](https://github.com/bilawalsidhu/gods-eye-view/pull/1508),
+open for review and not merged. Follow that PR for current full-app setup and
+verification status; this kit is not an installer for the latest upstream app.
+
 This source-only kit reuses the reviewed thin groundwater consumer and water-only
 Rainfolk shell. It does not alter an installed GEV app or submit upstream. Preserve
 the existing MIT notice in `LICENSES/GEV-MIT.txt`; newly authored Rainfolk files

@@ -249,8 +249,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 7785,
-      "sha256": "2e7f5e3d0f5be74c216d4aa30d4a7b8350256989ce95f112417a04e82a26755e"
+      "bytes": 9363,
+      "sha256": "83f61bc03a91063e8d5c1daeeeb4e207d859424f75056e9e8dae349cff7e319d"
     },
     {
       "path": "SECURITY.md",
@@ -364,8 +364,8 @@
     },
     {
       "path": "docs/GEV_INTEGRATION.md",
-      "bytes": 2806,
-      "sha256": "19bb85ba270cf6619d6513e28eea8df60bc5fc5b0f4006fb82d18b55bb58c3f0"
+      "bytes": 2952,
+      "sha256": "3ed3c9bb0f81f56cbd9253cd562033ad842acb0837928eb6b2e323c3f2fae81d"
     },
     {
       "path": "docs/MIGRATION.md",
@@ -559,8 +559,8 @@
     },
     {
       "path": "integrations/gev/README.md",
-      "bytes": 3207,
-      "sha256": "6e809333af4bf3890a9aae93864f2f227d7fb0390ae681934355235873130367"
+      "bytes": 3531,
+      "sha256": "2939f98451be40d1613f6c3a518a5fbc942f9ff8ebbbba12a0d9ec66ff6074aa"
     },
     {
       "path": "integrations/gev/base-groundwater-consumer.patch",
