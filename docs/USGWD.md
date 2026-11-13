@@ -42,6 +42,11 @@ file size, manifest checksum) triples from both manifest pages. Retain both page
 and the schema workbook with their hashes. The receipt records operator-supplied
 source evidence; it is not a signature or automatic license verification.
 
+The checksum-verified geospatial alternative uses schemaVersion=2 with a closed
+`derivation` object identifying the ZIP, DBF member and conversion policy. See
+[missing-state source handling](USGWD_MISSING_STATES.md); the original CSV profile
+above remains schemaVersion=1. Map consumers validate both profiles explicitly.
+
 Local file limits are 192 MiB and 250,000 rows, with 300 seconds per invocation,
 including source rehash, prefix replay and finalization. The 20,000-row synthetic
 benchmark took 16.21 seconds for a full pass and 22.12 seconds over two resumed
