@@ -249,8 +249,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 11570,
-      "sha256": "6af10139fbc9371045f04e924c9874064df56e1b53ee2456ab12b714d5d491a5"
+      "bytes": 11664,
+      "sha256": "9a5dd44cb52ee83a8f4d5176f6b16d4e83314022a7a6c76731ddaef145fe7844"
     },
     {
       "path": "SECURITY.md",
@@ -371,6 +371,11 @@
       "path": "docs/MIGRATION.md",
       "bytes": 8565,
       "sha256": "36105305bd607a06206522bf04681fe58d5d6017db2eaa42b3fbcc5a8904adc2"
+    },
+    {
+      "path": "docs/PIPELINES.md",
+      "bytes": 5485,
+      "sha256": "baca9429177c1f0d4fb10f6f9263634be0b6024d0a91afb8f3ebb4f9d45cfcab"
     },
     {
       "path": "docs/RIGHTS.md",
@@ -648,6 +653,11 @@
       "sha256": "2cb19b60877629cea938f1100681885dc58bc87ced23150f4bee5a11f226c1a9"
     },
     {
+      "path": "scripts/acquire-usgwd.py",
+      "bytes": 15055,
+      "sha256": "f391fb54c8642ced4bd803da194effa2ad208b743289585b02bd7a5d79fa58d0"
+    },
+    {
       "path": "scripts/capture-texas-sdr-bulk.py",
       "bytes": 8998,
       "sha256": "522835292caddda70e26aa5ac743ebc1735c5094e6be8fe6cb3f788f0726f19c"
@@ -673,9 +683,19 @@
       "sha256": "f91dd164232647c5a77a7026f9a6cbfe6613d2bc10f0ab38a0fa2d4c997b511b"
     },
     {
+      "path": "scripts/schedule-usgwd-check.ps1",
+      "bytes": 3738,
+      "sha256": "5b43a754d90f85e5cef3293122165822ab81492e951318348b44d99e703c623e"
+    },
+    {
       "path": "scripts/test-usgs-key-path.ps1",
       "bytes": 970,
       "sha256": "8a58468b05866889d6fa2f594b1281cbe771fadf33ae256b8fd637178a58a97d"
+    },
+    {
+      "path": "scripts/test_capture_acquire_usgwd.py",
+      "bytes": 3487,
+      "sha256": "26214ef3b9cbe4606489d5c9c8798a0c36775aafaac78ce5a60d0606e156621d"
     },
     {
       "path": "scripts/test_capture_refresh.py",
@@ -721,6 +741,11 @@
       "path": "scripts/usgwd-dbf.py",
       "bytes": 5523,
       "sha256": "3286b8a361309a8f1c696b1231c4b3f80ac7e5538bffb4bb56ba2b6af4262d82"
+    },
+    {
+      "path": "scripts/usgwd-national.py",
+      "bytes": 5597,
+      "sha256": "634a4745c7979bf58db329200225927d102d7cec3f2461d42a0a4ed234fc44da"
     },
     {
       "path": "scripts/verify-usgs-key.py",

@@ -11,18 +11,18 @@ synthetic examples and a [GEV integration kit](integrations/gev/README.md).
 It does not bundle the full GEV application or real source datasets. Website
 development is separate from this data/layer work.
 
-Verified historical USGWD status, October 31, 2026:
+Verified historical USGWD status, November 13, 2026:
 
 | Release | States | Catalog records | Mapped records | Unmapped records |
 | --- | ---: | ---: | ---: | ---: |
-| Validated local candidate; not published | 48 | 13,980,064 | 12,171,830 | 1,808,234 |
-| Currently published version | 36 | 7,072,581 | 5,918,051 | 1,154,530 |
+| Validated local candidate; not published | 50 | 14,260,581 | 12,452,285 | 1,808,296 |
+| [Currently published version](https://data.rainfolk.org/usgwd/8fa0f2843ef51c51f07da74644f9f5a2cf56c45563dc12f48dfaaca5e6aa6fe2/index.json) | 48 | 13,980,064 | 12,171,830 | 1,808,234 |
 
-The [published 36-state feed](https://data.rainfolk.org/usgwd/f7e59fb0a049b3a1990cc0fd6862190b8cc6aeb370989fd41ac0300b9ee6d336/index.json)
-is an immutable version. The local 48-state candidate closes its state-export
-gaps, including Texas, but still needs publication approval. Nebraska's publisher
-file is not ready, and South Carolina's download failed checksum verification;
-neither is included in the 48 collected states.
+The published 48-state feed is an immutable version. The local 50-state candidate
+reuses those 48 states unchanged and adds Nebraska (257,239 records, verified
+against the publisher checksum) and South Carolina (23,278 records from the
+checksum-verified geospatial file; the published CSV fails its own checksum).
+It still needs publication approval. See [data pipelines and schedules](docs/PIPELINES.md).
 
 These are historical source records, not a count of distinct physical wells or
 a current census. The [USGWD contract](docs/USGWD.md) preserves release-scoped IDs,
