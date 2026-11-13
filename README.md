@@ -15,14 +15,14 @@ Verified historical USGWD status, November 13, 2026:
 
 | Release | States | Catalog records | Mapped records | Unmapped records |
 | --- | ---: | ---: | ---: | ---: |
-| Validated local candidate; not published | 50 | 14,260,581 | 12,452,285 | 1,808,296 |
-| [Currently published version](https://data.rainfolk.org/usgwd/8fa0f2843ef51c51f07da74644f9f5a2cf56c45563dc12f48dfaaca5e6aa6fe2/index.json) | 48 | 13,980,064 | 12,171,830 | 1,808,234 |
+| [Current published version](https://data.rainfolk.org/usgwd/e6dc61db1500b491671cf094602e2257814c5507e99618d717fbb4f6082d8291/index.json) | 50 | 14,260,581 | 12,452,285 | 1,808,296 |
+| [Previous version](https://data.rainfolk.org/usgwd/8fa0f2843ef51c51f07da74644f9f5a2cf56c45563dc12f48dfaaca5e6aa6fe2/index.json) | 48 | 13,980,064 | 12,171,830 | 1,808,234 |
 
-The published 48-state feed is an immutable version. The local 50-state candidate
-reuses those 48 states unchanged and adds Nebraska (257,239 records, verified
-against the publisher checksum) and South Carolina (23,278 records from the
-checksum-verified geospatial file; the published CSV fails its own checksum).
-It still needs publication approval. See [data pipelines and schedules](docs/PIPELINES.md).
+Both versions are immutable and stay online. The 50-state version, published
+November 13, 2026, reuses the 48 earlier states unchanged and adds Nebraska
+(257,239 records, verified against the publisher checksum) and South Carolina
+(23,278 records from the checksum-verified geospatial file; the published CSV
+fails its own checksum). See [data pipelines and schedules](docs/PIPELINES.md).
 
 These are historical source records, not a count of distinct physical wells or
 a current census. The [USGWD contract](docs/USGWD.md) preserves release-scoped IDs,
@@ -82,7 +82,7 @@ Newly authored Rainfolk code and documentation are MIT licensed, copyright 2026 
 
 ## Roadmap
 
-- Publish the validated 48-state feed after approval and finish GEV visual review.
+- Point the GEV layer at the 50-state version and finish GEV visual review.
 - Prepare the scoped upstream layer contribution after the user's review.
 - Add verified official-state acquisition profiles and activate refresh scheduling only after approval.
 - Keep source attribution, historical dates, uncertain locations and coverage gaps visible.

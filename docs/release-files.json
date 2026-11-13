@@ -249,8 +249,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 11664,
-      "sha256": "9a5dd44cb52ee83a8f4d5176f6b16d4e83314022a7a6c76731ddaef145fe7844"
+      "bytes": 11725,
+      "sha256": "3e6eec5b2f21fe574f04819018789130ce1de1f98fc429a56d1d3427a27aedb8"
     },
     {
       "path": "SECURITY.md",
@@ -374,8 +374,8 @@
     },
     {
       "path": "docs/PIPELINES.md",
-      "bytes": 5485,
-      "sha256": "baca9429177c1f0d4fb10f6f9263634be0b6024d0a91afb8f3ebb4f9d45cfcab"
+      "bytes": 6052,
+      "sha256": "4cfaa05ec75d5606c3d97777c1f27d61f3d0c6da5e696becb57f739b1af84075"
     },
     {
       "path": "docs/RIGHTS.md",
