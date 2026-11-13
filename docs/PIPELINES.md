@@ -44,6 +44,16 @@ well_index --usgwd <state-import>/usgwd-segmented-manifest.json <state-map> 900
 python -B scripts/usgwd-national.py https://data.rainfolk.org/usgwd/<root>/index.json .temp-gev/usgwd/national --add <state-map>...
 ```
 
+### Publishing
+
+Each published version is a new immutable folder, `usgwd/<root sha256>/`, in the
+`rainfolk-well-data` R2 bucket behind data.rainfolk.org. The owner runs the
+publish script with an R2 key scoped to that bucket (Object Read & Write); the
+key is typed at the prompt and kept only in memory. The script copies unchanged
+states inside R2, uploads new files, verifies everything, and uploads the root
+`index.json` last. The 50-state version (`e6dc61db…`) was published this way on
+2026-11-13. It took about 3.5 hours, mostly the in-R2 copy of 48 states.
+
 ### Why the release is pinned
 
 The release fingerprint covers every file listed on HydroShare. It is part of
